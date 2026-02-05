@@ -10,11 +10,11 @@ OLLAMA_MODEL=os.getenv("OLLAMA_MODEL")
 
 
 def get_model():
-    return LiteLlm(
-        model=f"ollama_chat/{OLLAMA_MODEL}",
-        api_base=OLLAMA_API_BASE_URL,
-        extra_params={
-            "tool_choice":"auto"
-        },
-    )
-    #return "gemini-2.5-flash"
+    # return LiteLlm(
+    #     model=f"ollama_chat/{OLLAMA_MODEL}",
+    #     api_base=OLLAMA_API_BASE_URL,
+    #     extra_params={
+    #         "tool_choice":"auto"
+    #     },
+    # )
+    return "gemini-2.5-flash"

@@ -1,11 +1,13 @@
-from google.adk.sessions import InMemorySessionService,Session
+
+from google.adk.sessions import Session,DatabaseSessionService
 import  uuid
 from datetime import datetime
 from typing import List
 
 from app.models.init_session import InitSessionRequest, InitSessionResponse
+db_url='sqlite:///./my_agent_data.db'
 
-session_service = InMemorySessionService()
+session_service = DatabaseSessionService(db_url=db_url)
 
 async def create_session(request: InitSessionRequest)->InitSessionResponse:
    session_obj:Session = await session_service.create_session(

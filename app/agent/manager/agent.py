@@ -18,7 +18,7 @@ manager_agent = LlmAgent(
     sub_agents=[reporting_agent,knowledge_base_agent,data_analysis_agent],
 )
 
-# uncomment to run via adk web
+# uncomment to run via ai_workflow web
 # root_agent = LlmAgent(
 #     name="Manager",
 #     model="gemini-2.5-flash",

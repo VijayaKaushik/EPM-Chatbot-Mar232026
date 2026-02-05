@@ -3,8 +3,10 @@ from datetime import datetime
 
 from app.models.chat_history import ChatHistoryRequest, ChatMessage, ChatHistoryResponse
 from app.models.chat_request import ChatRequest, ChatResponse
-from app.service.adk.runner_service import run_query, run_query_sse
-from app.service.adk.session_service import get_ai_user_chat_history
+from app.service.ai_workflow.runner_service import run_query, run_query_sse
+#from app.service.ai_workflow.session_service import get_ai_user_chat_history  ## this is used for inmemory session saving
+from app.service.ai_workflow.db_session_service  import get_ai_user_chat_history
+
 import uuid
 
 
