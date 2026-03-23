@@ -2,6 +2,7 @@ from datetime import datetime
 
 from uuid import UUID
 
+
 ## This is the entity class
 class Prompt:
     __tablename__ = "prompt"

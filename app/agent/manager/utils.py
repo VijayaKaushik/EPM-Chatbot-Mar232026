@@ -1,12 +1,13 @@
 from dotenv import load_dotenv
 import os
 from google.adk.models.lite_llm import LiteLlm
+
 load_dotenv()
 
 OLLAMA_API_BASE_URL = os.getenv("OLLAMA_API_BASE_URL")
-#OLLAMA_MODEL=os.getenv("OLLAMA_MODEL")
+# OLLAMA_MODEL=os.getenv("OLLAMA_MODEL")
 
-OLLAMA_MODEL=os.getenv("OLLAMA_MODEL")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL")
 
 
 def get_model():

@@ -1,0 +1,90 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "description": "Block direct edits to main branch",
+        "matcher": "Edit|Write|Create",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "branch=$(git branch --show-current 2>/dev/null); if [ \"$branch\" = \"main\" ]; then echo '{\"block\": true, \"message\": \"❌ You are on main. Create a feature branch first: git checkout -b feat/your-feature\"}' >&2; exit 2; fi",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "description": "Block committing .env file",
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cmd=\"$CLAUDE_TOOL_INPUT\"; if echo \"$cmd\" | grep -q 'git add.*\\.env\\b'; then echo '{\"block\": true, \"message\": \"❌ Never commit .env — it contains secrets. Use .env.example instead.\"}' >&2; exit 2; fi",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "description": "Block pip install — enforce uv",
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cmd=\"$CLAUDE_TOOL_INPUT\"; if echo \"$cmd\" | grep -qE '^pip install'; then echo '{\"block\": true, \"message\": \"❌ Use uv instead: uv add <package>\"}' >&2; exit 2; fi",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "description": "Syntax check every Python file after edit",
+        "matcher": "Edit|Write|Create",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "file=\"$CLAUDE_TOOL_INPUT_PATH\"; if echo \"$file\" | grep -q '\\.py$'; then uv run python -m py_compile \"$file\" 2>&1 && echo \"✅ Syntax OK: $file\" || echo \"⚠️ Syntax error in $file — fix before continuing\"; fi",
+            "timeout": 15
+          }
+        ]
+      },
+      {
+        "description": "Auto-lint with ruff after Python file edits",
+        "matcher": "Edit|Write|Create",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "file=\"$CLAUDE_TOOL_INPUT_PATH\"; if echo \"$file\" | grep -q '\\.py$'; then uv run ruff check \"$file\" --fix --quiet 2>&1 || true; fi",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(uv run *)",
+      "Bash(uv add *)",
+      "Bash(uv sync)",
+      "Bash(adk run *)",
+      "Bash(adk web)",
+      "Bash(git status)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git branch *)",
+      "Bash(git checkout *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(git pull)"
+    ],
+    "deny": [
+      "Bash(pip install *)",
+      "Bash(pip uninstall *)",
+      "Bash(rm -rf /)"
+    ]
+  },
+  "env": {
+    "UV_PROJECT_ENVIRONMENT": ".venv",
+    "PYTHONDONTWRITEBYTECODE": "1"
+  }
+}

@@ -1,0 +1,21 @@
+id,name,age,department,salary,joining_date,city,performance_score,years_experience
+1,Alice Johnson,28,Engineering,75000,2020-01-15,New York,8.5,5
+2,Bob Smith,35,Marketing,65000,2019-03-22,Los Angeles,7.2,8
+3,Carol White,42,Engineering,95000,2018-07-10,New York,9.1,15
+4,David Brown,31,Sales,70000,2021-05-01,Chicago,6.8,6
+5,Eve Davis,29,Engineering,80000,2020-11-30,San Francisco,8.9,4
+6,Frank Miller,38,Marketing,72000,2019-08-14,New York,7.5,10
+7,Grace Lee,33,Sales,68000,2021-02-20,Los Angeles,8.2,7
+8,Henry Wilson,45,Engineering,105000,2017-04-05,San Francisco,9.3,20
+9,Iris Taylor,27,Marketing,62000,2022-01-10,Chicago,7.8,3
+10,Jack Anderson,36,Sales,75000,2020-09-15,New York,8.0,9
+11,Karen Martinez,30,Engineering,82000,2021-06-20,San Francisco,8.7,6
+12,Leo Thompson,39,Marketing,71000,2019-12-01,Chicago,7.4,11
+13,Maria Garcia,33,Sales,73000,2020-03-15,Los Angeles,8.1,8
+14,Nathan Clark,41,Engineering,98000,2018-09-10,New York,9.0,16
+15,Olivia Rodriguez,26,Marketing,60000,2022-05-01,San Francisco,7.6,2
+16,Paul Lewis,37,Sales,76000,2019-11-20,Chicago,7.9,10
+17,Quinn Walker,32,Engineering,85000,2020-07-08,Los Angeles,8.6,7
+18,Rachel Hall,29,Marketing,67000,2021-08-25,New York,7.7,5
+19,Samuel Allen,44,Sales,79000,2018-02-14,San Francisco,8.4,18
+20,Tina Young,31,Engineering,83000,2020-10-30,Chicago,8.8,6

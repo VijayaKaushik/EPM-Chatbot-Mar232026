@@ -11,4 +11,3 @@ class ChatResponse(BaseModel):
     msg_id: str
     message: str
     created_at: str
-
