@@ -27,3 +27,34 @@
 - To integrate into the main app, add `from app.agent.manager.sub_agent.vesting_agent.agent import vesting_agent` to `app/agent/manager/agent.py` and include it in `manager_agent`'s `sub_agents=[]` list
 - The `token_vesting_list` state is shared session state — if both releasemanagement_agent and vesting_agent run in the same session, their tokens will coexist in the same list
 ---
+
+---
+### [2026-03-23 15:15 EST] Moved vesting participant data from hardcoded to CSV files
+
+**What changed**
+- Created `app/agent/manager/sub_agent/vesting_agent/vesting_data/` folder with 4 CSV files, one per vesting date:
+  - `2026-05-15.csv` — 10 records
+  - `2026-06-15.csv` — 12 records
+  - `2026-09-15.csv` — 13 records
+  - `2026-12-15.csv` — 11 records
+- Modified `app/agent/manager/sub_agent/vesting_agent/tool.py`:
+  - Added `pandas` and `pathlib` imports, `VESTING_DATA_DIR` constant
+  - Replaced hardcoded participant list in `get_vesting_details` with `pd.read_csv()` lookup by date
+  - Added error handling for missing CSV (returns error status)
+
+**Logic & data flow**
+- `get_vesting_details(vesting_date)` now builds the CSV path as `vesting_data/{vesting_date}.csv` and loads it via pandas
+- `employee_id` is read as string dtype to preserve leading zeros
+- `df.to_dict(orient="records")` converts to the same `List[Dict]` format previously hardcoded
+- Each CSV has varied record counts (10–13) with diverse departments, grant types (RSU/PSU/Stock Option), statuses (Completed/Pending/Failed), countries, and currencies
+- Stock prices increase across dates (345→350→362→378) to simulate market movement
+
+**Assumptions**
+- CSV filenames must exactly match the date strings in `get_vesting_dates` (YYYY-MM-DD format)
+- pandas is already a project dependency (used by releasemanagement_agent)
+- Some employees appear across multiple CSVs (recurring vesting events) while others appear in only some dates
+
+**Context for future contributors**
+- To add a new vesting date: add the date string to `get_vesting_dates` and create a matching CSV in `vesting_data/`
+- CSV column order must match the header row — pandas reads by column name, not position
+---

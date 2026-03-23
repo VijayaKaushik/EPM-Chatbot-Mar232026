@@ -21,8 +21,8 @@ my_skill_toolset = skill_toolset.SkillToolset(
 
 vesting_agent = LlmAgent(
     name="vesting_agent",
-    model="gemini-2.0-flash",
-    instruction="""
+    model="gemini-2.5-flash",
+    instruction= """
     You are a Vesting Agent helping users view upcoming vesting dates
     and retrieve detailed vesting information for equity compensation plans.
 
