@@ -142,3 +142,54 @@
 - employee_id in output CSV matches vesting CSV for easy joins
 - To make FMV/sales_price user-configurable, add them as tool parameters and update the agent instruction
 ---
+
+### [2026-03-24 10:00 EST] Fixed PandasAI logging configuration
+
+**What changed**
+- Added logging configuration for PandasAI in `app/agent/manager/sub_agent/vesting_agent_test/tool.py`
+- Configured pandasai logger with DEBUG level and file handler writing to `pandasai.log`
+- Added proper log formatting with timestamps, logger name, level, and message
+- Set `propagate = False` to prevent duplicate logs
+
+**Logic & data flow**
+- PandasAI uses Python's logging module but requires explicit configuration to write logs
+- Without this setup, pandasai logs were not being written to the `pandasai.log` file
+- The logging configuration enables debugging of PandasAI operations, query processing, and LLM interactions
+
+**Assumptions**
+- DEBUG level logging is appropriate for development and troubleshooting
+- File-based logging is preferred over console output for pandasai operations
+- Log file location (`pandasai.log`) matches pandasai defaults
+
+**Context for future contributors**
+- PandasAI logs are now written to `pandasai.log` in the project root
+- Log format includes timestamps for debugging timing issues
+- If pandasai logs are still missing, check that the file handler has write permissions
+- For production, consider adjusting log level from DEBUG to INFO or WARNING
+---
+
+### [2026-03-24 13:00 EST] Investigated ADK query reformatting behavior
+
+**What changed**
+- Added debug logging in `analyze_vesting_data()` to capture the original query received by the tool
+- Added `print(f"Original query received: {query}")` before PandasAI processing
+- This helps identify where query reformatting occurs in the ADK pipeline
+
+**Logic & data flow**
+- Query reformatting happens in the ADK framework's LlmAgent tool calling mechanism
+- The ADK agent reformulates user queries to make them more precise for tool calling
+- Original query: "name of employess with RSUs" 
+- Reformatted query: "List the names of employees who have RSU as their grant type"
+- Reformatting occurs before the query reaches our tool function
+
+**Assumptions**
+- ADK's query reformatting is intentional behavior to improve tool calling accuracy
+- The reformatting makes queries more structured and precise for data analysis
+- This is happening in the ADK framework's internal processing, not in our code
+
+**Context for future contributors**
+- The ADK framework automatically reformulates natural language queries before calling tools
+- This behavior improves query accuracy but may mask the original user intent
+- If you need to see the original query, check the debug logs added to the tool
+- The reformatting happens at the ADK agent level, not in skills or tool code
+---

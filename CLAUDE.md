@@ -61,13 +61,7 @@ Each sub-agent has: `agent.py` (LlmAgent definition), `tool.py` (all tools in on
 - Always validate tool preconditions (e.g., token must exist before `calculate_tax`)
 - `analyze_release_data` uses PandasAI with a Faker-generated 100-row DataFrame (seeded, deterministic)
 
-## Git Workflow
 
-- **Never commit to `main` directly** — use feature branches
-- **Never commit `.env`**
-- Branch naming: `feat/`, `fix/`, `chore/`
-- Conventional commits: `feat:`, `fix:`, `chore:`
-- Run tests before pushing
 
 ## progress.md (Required)
 

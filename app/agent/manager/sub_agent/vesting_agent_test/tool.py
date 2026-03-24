@@ -2,10 +2,24 @@ import os
 import pathlib
 import random
 import uuid
+import logging
 from typing import Dict, List, Optional
 
 import pandas as pd
 from google.adk.tools.tool_context import ToolContext
+
+# Configure pandasai logging
+logging.basicConfig(level=logging.INFO)
+pandasai_logger = logging.getLogger("pandasai")
+pandasai_logger.setLevel(logging.DEBUG)
+# Add file handler for pandasai logs
+pandasai_handler = logging.FileHandler("pandasai.log")
+pandasai_handler.setLevel(logging.DEBUG)
+pandasai_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+pandasai_handler.setFormatter(pandasai_formatter)
+pandasai_logger.addHandler(pandasai_handler)
+# Prevent duplicate logs
+pandasai_logger.propagate = False
 
 VESTING_DATA_DIR = pathlib.Path(__file__).parent / "vesting_data"
 TAX_DATA_DIR = pathlib.Path(__file__).parent / "tax_data"
@@ -199,14 +213,14 @@ class GeminiLLM(_PaiLLM):
         return response.text
 
 
-def analyze_vesting_data(query: str, vesting_date: Optional[str] = None) -> Dict:
+def analyze_vesting_data(query: str, vesting_date: str) -> Dict:
     """
     Analyzes vesting data using natural language queries powered by PandasAI.
 
     This tool accepts a natural language question about the vesting data
-    and returns the analysis result. If a vesting_date is provided, only
-    data for that date is analyzed. Otherwise, all vesting dates are
-    combined into a single dataset for cross-date analysis.
+    for a specific vesting date and returns the analysis result. Loads both
+    vesting and tax data (if available) and passes them to PandasAI as
+    separate dataframes for analysis.
 
     Call `get_supported_fields` first to understand the available columns,
     then use this tool with natural language queries for slicing, dicing,
@@ -225,14 +239,14 @@ def analyze_vesting_data(query: str, vesting_date: Optional[str] = None) -> Dict
             - "List employees where net_value_delivered > 300000"
             - "What percentage of releases used Sell-to-Cover tax method?"
 
-        vesting_date (str, optional):
-            If provided, analyze only data for this specific vesting date
-            (YYYY-MM-DD). If omitted, all vesting dates are combined.
+        vesting_date (str):
+            The vesting date to analyze. Format: YYYY-MM-DD.
+            Data is loaded only for this specific vesting date.
 
     LLM Prompt Examples:
-        - "Analyze vesting data: total shares released by department"
-        - "Query vesting data for top earners"
-        - "Break down release status counts"
+        - "Analyze vesting data for 2026-05-15: total shares released by department"
+        - "Query vesting data for top earners on 2026-05-15"
+        - "Break down release status counts for this vesting date"
         - "Show me a summary of net value by country"
         - "Compare RSU vs PSU vs Stock Option grants"
 
@@ -241,56 +255,48 @@ def analyze_vesting_data(query: str, vesting_date: Optional[str] = None) -> Dict
             status (str): success or error
             query (str): The original query
             result (str): The analysis result from PandasAI
-            total_rows (int): Number of rows in the dataset
+            total_rows (int): Number of rows in the vesting dataset
+            vesting_date (str): The analyzed vesting date
+            tax_data_loaded (bool): Whether tax data was available and loaded
             message (str): Status or error message
     """
     try:
         from pandasai.agent import Agent as PaiAgent
 
-        if vesting_date:
-            csv_path = VESTING_DATA_DIR / f"{vesting_date}.csv"
-            if not csv_path.exists():
-                return {
-                    "status": "error",
-                    "query": query,
-                    "result": None,
-                    "total_rows": 0,
-                    "message": f"No vesting data found for date {vesting_date}",
-                }
-            df = pd.read_csv(csv_path, dtype={"employee_id": str})
+        # Load vesting data for the specific date
+        vesting_path = VESTING_DATA_DIR / f"{vesting_date}.csv"
+        if not vesting_path.exists():
+            return {
+                "status": "error",
+                "query": query,
+                "vesting_date": vesting_date,
+                "result": None,
+                "total_rows": 0,
+                "tax_data_loaded": False,
+                "message": f"No vesting data found for date {vesting_date}",
+            }
 
-            # Join tax data if available for this date
-            tax_path = TAX_DATA_DIR / f"{vesting_date}.csv"
-            if tax_path.exists():
-                tax_df = pd.read_csv(tax_path, dtype={"employee_id": str})
-                df = df.merge(tax_df, on="employee_id", how="left", suffixes=("", "_tax"))
-        else:
-            df = _load_all_vesting_data()
-            if df.empty:
-                return {
-                    "status": "error",
-                    "query": query,
-                    "result": None,
-                    "total_rows": 0,
-                    "message": "No vesting data files found",
-                }
+        vesting_df = pd.read_csv(vesting_path, dtype={"employee_id": str})
 
-            # Join all available tax data
-            tax_dfs = []
-            for tax_file in sorted(TAX_DATA_DIR.glob("*.csv")):
-                tdf = pd.read_csv(tax_file, dtype={"employee_id": str})
-                # Add release_date so the join is unique per employee+date
-                tdf["release_date"] = tax_file.stem
-                tax_dfs.append(tdf)
-            if tax_dfs:
-                all_tax = pd.concat(tax_dfs, ignore_index=True)
-                df = df.merge(all_tax, on=["employee_id", "release_date"], how="left", suffixes=("", "_tax"))
+        # Prepare list of dataframes to pass to PandasAI
+        dfs_to_analyze = [vesting_df]
+        tax_data_loaded = False
 
-        tax_included = "tax_amount" in df.columns
+        # Load tax data for the same vesting date if available
+        tax_path = TAX_DATA_DIR / f"{vesting_date}.csv"
+        if tax_path.exists():
+            tax_df = pd.read_csv(tax_path, dtype={"employee_id": str})
+            dfs_to_analyze.append(tax_df)
+            tax_data_loaded = True
+
         api_key = os.environ.get("GOOGLE_API_KEY", "")
         llm = GeminiLLM(api_key=api_key, model="gemini-2.5-flash")
 
-        agent = PaiAgent(df, config={"llm": llm})
+        # Log the original query before any ADK processing
+        print(f"Original query received: {query}")
+        
+        # Pass individual dataframes to PandasAI agent
+        agent = PaiAgent(dfs_to_analyze, config={"llm": llm})
         result = agent.chat(query)
 
         # Convert result to string for consistent return
@@ -305,16 +311,19 @@ def analyze_vesting_data(query: str, vesting_date: Optional[str] = None) -> Dict
             "status": "success",
             "query": query,
             "result": result_str,
-            "total_rows": len(df),
-            "tax_data_included": tax_included,
-            "message": f"Analysis completed successfully. {'Tax data joined.' if tax_included else 'No tax data available.'}",
+            "total_rows": len(vesting_df),
+            "vesting_date": vesting_date,
+            "tax_data_loaded": tax_data_loaded,
+            "message": f"Analysis completed successfully. {'Tax data included.' if tax_data_loaded else 'Tax data not available.'}",
         }
     except Exception as e:
         return {
             "status": "error",
             "query": query,
+            "vesting_date": vesting_date,
             "result": None,
             "total_rows": 0,
+            "tax_data_loaded": False,
             "message": f"Analysis failed: {str(e)}",
         }
 
