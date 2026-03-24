@@ -1,5 +1,6 @@
 import os
 import pathlib
+import random
 import uuid
 from typing import Dict, List, Optional
 
@@ -7,6 +8,7 @@ import pandas as pd
 from google.adk.tools.tool_context import ToolContext
 
 VESTING_DATA_DIR = pathlib.Path(__file__).parent / "vesting_data"
+TAX_DATA_DIR = pathlib.Path(__file__).parent / "tax_data"
 
 VESTING_FIELDS = [
     {"column_name": "employee_id", "label": "Employee ID", "description": "Unique identifier for the employee", "data_type": "string", "filterable": True, "sortable": True},
@@ -57,7 +59,6 @@ def get_vesting_dates(count: Optional[int] = 1) -> Dict:
     all_vesting_dates = [
         "2026-05-15",
         "2026-06-15",
-        "2026-09-15",
         "2026-09-15",
         "2026-12-15",
     ]
@@ -127,7 +128,7 @@ def get_vesting_details(vesting_date: str, tool_context: ToolContext) -> Dict:
         "status": "success",
         "vesting_date": vesting_date,
         "token_id": token_id,
-        "participants": participants,
+        #"participants": participants,
         "message": f"Retrieved {len(participants)} participant records for {vesting_date}",
     }
 
@@ -245,7 +246,6 @@ def analyze_vesting_data(query: str, vesting_date: Optional[str] = None) -> Dict
     """
     try:
         from pandasai.agent import Agent as PaiAgent
-        from pandasai.llm.base import LLM as PaiLLM
 
         if vesting_date:
             csv_path = VESTING_DATA_DIR / f"{vesting_date}.csv"
@@ -258,6 +258,12 @@ def analyze_vesting_data(query: str, vesting_date: Optional[str] = None) -> Dict
                     "message": f"No vesting data found for date {vesting_date}",
                 }
             df = pd.read_csv(csv_path, dtype={"employee_id": str})
+
+            # Join tax data if available for this date
+            tax_path = TAX_DATA_DIR / f"{vesting_date}.csv"
+            if tax_path.exists():
+                tax_df = pd.read_csv(tax_path, dtype={"employee_id": str})
+                df = df.merge(tax_df, on="employee_id", how="left", suffixes=("", "_tax"))
         else:
             df = _load_all_vesting_data()
             if df.empty:
@@ -269,6 +275,18 @@ def analyze_vesting_data(query: str, vesting_date: Optional[str] = None) -> Dict
                     "message": "No vesting data files found",
                 }
 
+            # Join all available tax data
+            tax_dfs = []
+            for tax_file in sorted(TAX_DATA_DIR.glob("*.csv")):
+                tdf = pd.read_csv(tax_file, dtype={"employee_id": str})
+                # Add release_date so the join is unique per employee+date
+                tdf["release_date"] = tax_file.stem
+                tax_dfs.append(tdf)
+            if tax_dfs:
+                all_tax = pd.concat(tax_dfs, ignore_index=True)
+                df = df.merge(all_tax, on=["employee_id", "release_date"], how="left", suffixes=("", "_tax"))
+
+        tax_included = "tax_amount" in df.columns
         api_key = os.environ.get("GOOGLE_API_KEY", "")
         llm = GeminiLLM(api_key=api_key, model="gemini-2.5-flash")
 
@@ -288,7 +306,8 @@ def analyze_vesting_data(query: str, vesting_date: Optional[str] = None) -> Dict
             "query": query,
             "result": result_str,
             "total_rows": len(df),
-            "message": "Analysis completed successfully",
+            "tax_data_included": tax_included,
+            "message": f"Analysis completed successfully. {'Tax data joined.' if tax_included else 'No tax data available.'}",
         }
     except Exception as e:
         return {
@@ -298,3 +317,120 @@ def analyze_vesting_data(query: str, vesting_date: Optional[str] = None) -> Dict
             "total_rows": 0,
             "message": f"Analysis failed: {str(e)}",
         }
+
+
+def _calculate_tax_amount(shares_released: int, fmv: float, sales_price: float) -> float:
+    """Random tax calculation: base tax + random supplemental rate."""
+    base_tax_rate = random.uniform(0.22, 0.37)
+    supplemental_rate = random.uniform(0.01, 0.08)
+    taxable_income = shares_released * fmv
+    capital_gain = shares_released * max(sales_price - fmv, 0)
+    tax = (taxable_income * base_tax_rate) + (capital_gain * supplemental_rate)
+    return round(tax, 2)
+
+
+def calculate_tax(vesting_date: str, tool_context: ToolContext) -> Dict:
+    """
+    Calculates tax for all participants on a given vesting date.
+
+    Loads the vesting detail CSV for the specified date, computes tax for each
+    participant using FMV=10 and sales_price=20, and saves the results as a
+    CSV in the tax_data folder. The vesting date must already exist in the
+    agent state (call get_vesting_details first).
+
+    Args:
+        vesting_date (str):
+            Vesting date for which to calculate tax. Format: YYYY-MM-DD.
+
+        tool_context (ToolContext):
+            ADK tool context. Requires vesting details to be present under
+            state["token_vesting_list"]. If missing, the agent should first
+            call get_vesting_details.
+
+    LLM Prompt Examples:
+        - "Calculate tax for vesting date 2026-05-15"
+        - "Run tax calculation for next vesting date"
+        - "Compute taxes for this vesting event"
+        - "Generate tax report for 2026-06-15"
+
+    Preconditions:
+        - Vesting details must already exist in state for this date.
+        - If missing, the agent should first call get_vesting_details.
+
+    Returns:
+        Dict containing:
+            status (str): success or error
+            vesting_date (str): The vesting date processed
+            fmv (float): FMV used for calculation (10)
+            sales_price (float): Sales price used for calculation (20)
+            participants_processed (int): Number of participants
+            output_file (str): Path to the generated tax CSV
+            summary (List[Dict]): Preview of tax results
+            message (str): Status message
+    """
+    # Validate that vesting details exist in state
+    tool_vesting_list = tool_context.state.get("token_vesting_list")
+    if tool_vesting_list is None:
+        return {
+            "status": "error",
+            "vesting_date": vesting_date,
+            "message": "No vesting details in state. Call get_vesting_details first.",
+        }
+
+    token_id = None
+    for vd, tid in tool_vesting_list:
+        if vd == vesting_date:
+            token_id = tid
+            break
+
+    if token_id is None:
+        return {
+            "status": "error",
+            "vesting_date": vesting_date,
+            "message": f"Vesting details not found for {vesting_date}. Call get_vesting_details first.",
+        }
+
+    # Load vesting data
+    csv_path = VESTING_DATA_DIR / f"{vesting_date}.csv"
+    if not csv_path.exists():
+        return {
+            "status": "error",
+            "vesting_date": vesting_date,
+            "message": f"No vesting data file found for {vesting_date}",
+        }
+
+    vesting_df = pd.read_csv(csv_path, dtype={"employee_id": str})
+
+    # Fixed FMV and sales price
+    fmv = 10.0
+    sales_price = 20.0
+
+    # Calculate tax for each participant
+    random.seed(int(vesting_date.replace("-", "")))  # deterministic per date
+    tax_rows = []
+    for _, row in vesting_df.iterrows():
+        tax_amount = _calculate_tax_amount(row["shares_released"], fmv, sales_price)
+        tax_rows.append({
+            "employee_id": row["employee_id"],
+            "tax_amount": tax_amount,
+            "fmv": fmv,
+            "sales_price": sales_price,
+        })
+
+    tax_df = pd.DataFrame(tax_rows)
+
+    # Save to tax_data folder
+    TAX_DATA_DIR.mkdir(exist_ok=True)
+    output_path = TAX_DATA_DIR / f"{vesting_date}.csv"
+    tax_df.to_csv(output_path, index=False)
+
+    return {
+        "status": "success",
+        "vesting_date": vesting_date,
+        "fmv": fmv,
+        "sales_price": sales_price,
+        "participants_processed": len(tax_df),
+        "output_file": str(output_path),
+        #"summary": tax_df.to_dict(orient="records"),
+        "message": f"Tax calculated for {len(tax_df)} participants. Output saved to tax_data/{vesting_date}.csv",
+    }

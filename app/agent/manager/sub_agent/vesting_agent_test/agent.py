@@ -4,7 +4,7 @@ from google.adk.agents import LlmAgent
 from google.adk.skills import load_skill_from_dir
 from google.adk.tools import skill_toolset
 
-from .tool import get_vesting_dates, get_vesting_details, get_supported_fields, analyze_vesting_data
+from .tool import get_vesting_dates, get_vesting_details, get_supported_fields, analyze_vesting_data, calculate_tax
 
 # Load skills from the file definitions
 welcome_intent_skill = load_skill_from_dir(
@@ -40,10 +40,21 @@ vesting_agent = LlmAgent(
     - The dataset contains vesting records with employee, grant, vesting,
       tax, and release information across multiple vesting dates.
 
+    TAX CALCULATION:
+    - When users ask to calculate tax for a vesting date, follow this workflow:
+      1. Call `get_vesting_dates` to find available dates (if not already known)
+      2. Call `get_vesting_details(vesting_date)` to load participants into state
+      3. Call `calculate_tax(vesting_date)` to compute tax and generate output CSV
+    - Tax is calculated using FMV=10 and sales_price=20 for all participants
+    - Results are saved as a CSV in the tax_data folder
+    - Present the tax summary in a business-friendly table
+    - Never expose token_id to the user
+
     APPROACH:
     - Use welcome-intent skill for new users or unclear requests
     - Use vesting-schedule skill for vesting date and detail workflows
     - For data analysis questions, use get_supported_fields + analyze_vesting_data
+    - For tax calculation, use get_vesting_details + calculate_tax
     - Follow the skill instructions for detailed workflow guidance
     - If user states clear intent, proceed directly to the appropriate skill
 
@@ -53,7 +64,7 @@ vesting_agent = LlmAgent(
     - Present participant data in business-friendly tables or summaries
     - Focus on outcomes and next steps
     """,
-    tools=[get_vesting_dates, get_vesting_details, get_supported_fields, analyze_vesting_data, my_skill_toolset],
+    tools=[get_vesting_dates, get_vesting_details, get_supported_fields, analyze_vesting_data, calculate_tax, my_skill_toolset],
 )
 
 # Required for adk web
