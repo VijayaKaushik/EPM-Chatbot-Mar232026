@@ -1,0 +1,467 @@
+[
+  {
+    "employee_id": "74069291",
+    "current_address": {
+      "street": "863 Lawrence Valleys",
+      "city": "Port Lindachester",
+      "state": "Michigan",
+      "zip": "36922",
+      "country": "Japan"
+    },
+    "office_address": {
+      "street": "43321 Brittany Bypass",
+      "city": "North Jefferyhaven",
+      "state": "Rhode Island",
+      "zip": "03979",
+      "country": "Japan"
+    },
+    "tax_info": {
+      "tax_id": "XXX-XX-7912",
+      "tax_country": "Japan",
+      "tax_residency": "Non-US Resident",
+      "withholding_rate": 0.2,
+      "w8_w9_status": "W8-BEN on file"
+    },
+    "account_info": {
+      "brokerage_account": "BR-ACC-133326",
+      "account_status": "Active",
+      "account_type": "Individual",
+      "bank_name": "MUFG Bank",
+      "ach_status": "Verified"
+    }
+  },
+  {
+    "employee_id": "31582740",
+    "current_address": {
+      "street": "84959 Janet Cape Apt. 413",
+      "city": "South Joshuastad",
+      "state": "Hawaii",
+      "zip": "49021",
+      "country": "United States"
+    },
+    "office_address": {
+      "street": "51161 Abbott Rapids",
+      "city": "Lindsaymouth",
+      "state": "Ohio",
+      "zip": "16862",
+      "country": "United States"
+    },
+    "tax_info": {
+      "tax_id": "XXX-XX-8359",
+      "tax_country": "United States",
+      "tax_residency": "US Resident",
+      "withholding_rate": 0.22,
+      "w8_w9_status": "W9 on file"
+    },
+    "account_info": {
+      "brokerage_account": "BR-ACC-717889",
+      "account_status": "Restricted",
+      "account_type": "Individual",
+      "bank_name": "Chase",
+      "ach_status": "Verified"
+    }
+  },
+  {
+    "employee_id": "58203617",
+    "current_address": {
+      "street": "95376 Thomas Dam",
+      "city": "Lake Anna",
+      "state": "Kentucky",
+      "zip": "98413",
+      "country": "South Korea"
+    },
+    "office_address": {
+      "street": "41928 Frank Light Suite 835",
+      "city": "East Lydiamouth",
+      "state": "Montana",
+      "zip": "35594",
+      "country": "South Korea"
+    },
+    "tax_info": {
+      "tax_id": "XXX-XX-3547",
+      "tax_country": "South Korea",
+      "tax_residency": "Non-US Resident",
+      "withholding_rate": 0.22,
+      "w8_w9_status": "W8-BEN on file"
+    },
+    "account_info": {
+      "brokerage_account": "BR-ACC-325772",
+      "account_status": "Active",
+      "account_type": "Individual",
+      "bank_name": "KB Kookmin Bank",
+      "ach_status": "Pending"
+    }
+  },
+  {
+    "employee_id": "90124536",
+    "current_address": {
+      "street": "480 Erin Plain Suite 514",
+      "city": "Mooretown",
+      "state": "Washington",
+      "zip": "94830",
+      "country": "United States"
+    },
+    "office_address": {
+      "street": "653 William Course Apt. 122",
+      "city": "Carlsonfurt",
+      "state": "Missouri",
+      "zip": "78605",
+      "country": "United States"
+    },
+    "tax_info": {
+      "tax_id": "XXX-XX-9785",
+      "tax_country": "United States",
+      "tax_residency": "US Resident",
+      "withholding_rate": 0.22,
+      "w8_w9_status": "W9 on file"
+    },
+    "account_info": {
+      "brokerage_account": "BR-ACC-230889",
+      "account_status": "Active",
+      "account_type": "Individual",
+      "bank_name": "Chase",
+      "ach_status": "Not Verified"
+    }
+  },
+  {
+    "employee_id": "44781923",
+    "current_address": {
+      "street": "03911 Cabrera Trace Apt. 278",
+      "city": "West Allison",
+      "state": "Rhode Island",
+      "zip": "55962",
+      "country": "United States"
+    },
+    "office_address": {
+      "street": "281 Skinner Parkways Apt. 252",
+      "city": "New Mariotown",
+      "state": "Delaware",
+      "zip": "48077",
+      "country": "United States"
+    },
+    "tax_info": {
+      "tax_id": "XXX-XX-4733",
+      "tax_country": "United States",
+      "tax_residency": "US Resident",
+      "withholding_rate": 0.22,
+      "w8_w9_status": "W9 on file"
+    },
+    "account_info": {
+      "brokerage_account": "BR-ACC-910620",
+      "account_status": "Active",
+      "account_type": "Individual",
+      "bank_name": "Chase",
+      "ach_status": "Verified"
+    }
+  },
+  {
+    "employee_id": "67320185",
+    "current_address": {
+      "street": "346 Kim Path",
+      "city": "Martinezbury",
+      "state": "California",
+      "zip": "44814",
+      "country": "United States"
+    },
+    "office_address": {
+      "street": "N/A",
+      "city": "N/A",
+      "state": "N/A",
+      "zip": "N/A",
+      "country": "N/A"
+    },
+    "tax_info": {
+      "tax_id": "XXX-XX-3664",
+      "tax_country": "United States",
+      "tax_residency": "US Resident",
+      "withholding_rate": 0.22,
+      "w8_w9_status": "W9 on file"
+    },
+    "account_info": {
+      "brokerage_account": "BR-ACC-488162",
+      "account_status": "Restricted",
+      "account_type": "Individual",
+      "bank_name": "Chase",
+      "ach_status": "Not Verified"
+    }
+  },
+  {
+    "employee_id": "82910374",
+    "current_address": {
+      "street": "7382 Sanchez Mountains",
+      "city": "Leeville",
+      "state": "Texas",
+      "zip": "56999",
+      "country": "Canada"
+    },
+    "office_address": {
+      "street": "839 Adrian Station",
+      "city": "East Carloston",
+      "state": "Michigan",
+      "zip": "09788",
+      "country": "Canada"
+    },
+    "tax_info": {
+      "tax_id": "XXX-XX-3677",
+      "tax_country": "Canada",
+      "tax_residency": "Canadian Resident",
+      "withholding_rate": 0.25,
+      "w8_w9_status": "W8-BEN on file"
+    },
+    "account_info": {
+      "brokerage_account": "BR-ACC-584714",
+      "account_status": "Closed",
+      "account_type": "Individual",
+      "bank_name": "RBC Royal Bank",
+      "ach_status": "Verified"
+    }
+  },
+  {
+    "employee_id": "15649208",
+    "current_address": {
+      "street": "78108 Tanya Terrace",
+      "city": "East Richard",
+      "state": "New Mexico",
+      "zip": "28517",
+      "country": "United Kingdom"
+    },
+    "office_address": {
+      "street": "6701 Richard Junction Apt. 333",
+      "city": "Taylorburgh",
+      "state": "Louisiana",
+      "zip": "61138",
+      "country": "United Kingdom"
+    },
+    "tax_info": {
+      "tax_id": "XXX-XX-6168",
+      "tax_country": "United Kingdom",
+      "tax_residency": "UK Resident",
+      "withholding_rate": 0.2,
+      "w8_w9_status": "W8-BEN on file"
+    },
+    "account_info": {
+      "brokerage_account": "BR-ACC-520651",
+      "account_status": "Active",
+      "account_type": "Individual",
+      "bank_name": "Barclays",
+      "ach_status": "Verified"
+    }
+  },
+  {
+    "employee_id": "39572061",
+    "current_address": {
+      "street": "09788 Brian Pass Apt. 219",
+      "city": "Lake Michellefurt",
+      "state": "Delaware",
+      "zip": "75169",
+      "country": "United States"
+    },
+    "office_address": {
+      "street": "26064 Mitchell Square Suite 234",
+      "city": "North Beth",
+      "state": "Ohio",
+      "zip": "08490",
+      "country": "United States"
+    },
+    "tax_info": {
+      "tax_id": "XXX-XX-3287",
+      "tax_country": "United States",
+      "tax_residency": "US Resident",
+      "withholding_rate": 0.22,
+      "w8_w9_status": "W9 on file"
+    },
+    "account_info": {
+      "brokerage_account": "BR-ACC-358607",
+      "account_status": "Active",
+      "account_type": "Corporate",
+      "bank_name": "Chase",
+      "ach_status": "Pending"
+    }
+  },
+  {
+    "employee_id": "53186740",
+    "current_address": {
+      "street": "46247 Hickman Cliffs Apt. 799",
+      "city": "North Amandahaven",
+      "state": "Kentucky",
+      "zip": "17862",
+      "country": "India"
+    },
+    "office_address": {
+      "street": "909 Robert Prairie",
+      "city": "Sarahborough",
+      "state": "Texas",
+      "zip": "94373",
+      "country": "India"
+    },
+    "tax_info": {
+      "tax_id": "XXX-XX-3266",
+      "tax_country": "India",
+      "tax_residency": "Non-US Resident",
+      "withholding_rate": 0.25,
+      "w8_w9_status": "W8-BEN on file"
+    },
+    "account_info": {
+      "brokerage_account": "BR-ACC-634277",
+      "account_status": "Active",
+      "account_type": "Individual",
+      "bank_name": "HDFC Bank",
+      "ach_status": "Verified"
+    }
+  },
+  {
+    "employee_id": "22487163",
+    "current_address": {
+      "street": "35427 Carr Valley Apt. 841",
+      "city": "West Darrell",
+      "state": "Connecticut",
+      "zip": "97811",
+      "country": "United States"
+    },
+    "office_address": {
+      "street": "N/A",
+      "city": "N/A",
+      "state": "N/A",
+      "zip": "N/A",
+      "country": "N/A"
+    },
+    "tax_info": {
+      "tax_id": "XXX-XX-2040",
+      "tax_country": "United States",
+      "tax_residency": "US Resident",
+      "withholding_rate": 0.22,
+      "w8_w9_status": "W9 on file"
+    },
+    "account_info": {
+      "brokerage_account": "BR-ACC-503457",
+      "account_status": "Restricted",
+      "account_type": "Individual",
+      "bank_name": "Chase",
+      "ach_status": "Not Verified"
+    }
+  },
+  {
+    "employee_id": "85631907",
+    "current_address": {
+      "street": "0052 Martin Mills Suite 801",
+      "city": "Lake Rebeccaside",
+      "state": "Arizona",
+      "zip": "48894",
+      "country": "Australia"
+    },
+    "office_address": {
+      "street": "4935 Grace Walk",
+      "city": "Williamview",
+      "state": "Arkansas",
+      "zip": "12598",
+      "country": "Australia"
+    },
+    "tax_info": {
+      "tax_id": "XXX-XX-6573",
+      "tax_country": "Australia",
+      "tax_residency": "Non-US Resident",
+      "withholding_rate": 0.15,
+      "w8_w9_status": "W8-BEN on file"
+    },
+    "account_info": {
+      "brokerage_account": "BR-ACC-216970",
+      "account_status": "Closed",
+      "account_type": "Individual",
+      "bank_name": "Commonwealth Bank",
+      "ach_status": "Pending"
+    }
+  },
+  {
+    "employee_id": "41893256",
+    "current_address": {
+      "street": "232 Nicole Burg Apt. 563",
+      "city": "Erikville",
+      "state": "Missouri",
+      "zip": "05576",
+      "country": "France"
+    },
+    "office_address": {
+      "street": "2045 Rachel Fords",
+      "city": "Lake Curtis",
+      "state": "Wyoming",
+      "zip": "73886",
+      "country": "France"
+    },
+    "tax_info": {
+      "tax_id": "XXX-XX-5889",
+      "tax_country": "France",
+      "tax_residency": "EU Resident",
+      "withholding_rate": 0.28,
+      "w8_w9_status": "W8-BEN on file"
+    },
+    "account_info": {
+      "brokerage_account": "BR-ACC-982554",
+      "account_status": "Closed",
+      "account_type": "Corporate",
+      "bank_name": "BNP Paribas",
+      "ach_status": "Verified"
+    }
+  },
+  {
+    "employee_id": "28764091",
+    "current_address": {
+      "street": "14294 Daniel Mews Suite 569",
+      "city": "South Rachelborough",
+      "state": "Kentucky",
+      "zip": "06318",
+      "country": "India"
+    },
+    "office_address": {
+      "street": "37543 Andrew Fields Suite 541",
+      "city": "Michaelhaven",
+      "state": "Montana",
+      "zip": "89566",
+      "country": "India"
+    },
+    "tax_info": {
+      "tax_id": "XXX-XX-9005",
+      "tax_country": "India",
+      "tax_residency": "Non-US Resident",
+      "withholding_rate": 0.25,
+      "w8_w9_status": "W8-BEN on file"
+    },
+    "account_info": {
+      "brokerage_account": "BR-ACC-120422",
+      "account_status": "Active",
+      "account_type": "Individual",
+      "bank_name": "HDFC Bank",
+      "ach_status": "Pending"
+    }
+  },
+  {
+    "employee_id": "72450318",
+    "current_address": {
+      "street": "236 Byrd Extensions Suite 680",
+      "city": "Justinchester",
+      "state": "Pennsylvania",
+      "zip": "80017",
+      "country": "Netherlands"
+    },
+    "office_address": {
+      "street": "88356 Stacy Isle Suite 148",
+      "city": "Elizabethmouth",
+      "state": "Montana",
+      "zip": "91885",
+      "country": "Netherlands"
+    },
+    "tax_info": {
+      "tax_id": "XXX-XX-2133",
+      "tax_country": "Netherlands",
+      "tax_residency": "EU Resident",
+      "withholding_rate": 0.21,
+      "w8_w9_status": "W8-BEN on file"
+    },
+    "account_info": {
+      "brokerage_account": "BR-ACC-897549",
+      "account_status": "Active",
+      "account_type": "Corporate",
+      "bank_name": "ING Bank",
+      "ach_status": "Not Verified"
+    }
+  }
+]

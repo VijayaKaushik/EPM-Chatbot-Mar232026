@@ -142,3 +142,36 @@
 - employee_id in output CSV matches vesting CSV for easy joins
 - To make FMV/sales_price user-configurable, add them as tool parameters and update the agent instruction
 ---
+
+---
+### [2026-03-24 12:00 EST] Created participant_agent sub-agent
+
+**What changed**
+- Created `app/agent/manager/sub_agent/participant_agent/__init__.py` — empty package init
+- Created `app/agent/manager/sub_agent/participant_agent/tool.py` — 3 tools: `get_all_participants`, `get_participant_details`, `analyze_participant_data` with GeminiLLM + PandasAI
+- Created `app/agent/manager/sub_agent/participant_agent/agent.py` — `participant_agent` LlmAgent (gemini-2.5-flash) with all 3 tools + SkillToolset; exports `root_agent = participant_agent` for adk web
+- Created `app/agent/manager/sub_agent/participant_agent/skills/participant_lookup/SKILL.md` — 3-path skill: aggregation → analyze_participant_data, name lookup → get_all_participants + get_participant_details, direct ID lookup → get_participant_details
+- Created `app/agent/manager/sub_agent/participant_agent/skills/data_analysis/SKILL.md` — analysis skill with full flattened column schema reference and example queries
+- Did NOT modify or regenerate participant_data/participants.json or participant_data/participant_details.json (pre-existing)
+
+**Logic & data flow**
+- `get_all_participants()` reads `participants.json` via `json.loads(path.read_text())` and returns all records with no filtering
+- `get_participant_details(employee_id)` reads both JSON files, exact-matches on employee_id, merges base record + detail record into one combined dict
+- `analyze_participant_data(query)` reads both files, flattens all nested blobs (current_address → current_city/state/country, office_address → office_city/country, tax_info → tax_residency/withholding_rate/w8_w9_status, account_info → account_status/account_type/bank_name/ach_status), merges on employee_id, passes merged DataFrame to PandasAI GeminiLLM wrapper
+- GeminiLLM class is a direct copy of the pattern from vesting_agent_test/tool.py — wraps google-genai client to satisfy PandasAI's LLM interface
+- Skills loaded via `load_skill_from_dir()` + `SkillToolset` — same pattern as vesting_agent_test
+- Agent routing instruction directs: aggregation/count/group → analyze_participant_data, named person → get_all_participants then get_participant_details, direct ID → get_participant_details
+
+**Assumptions**
+- Used `gemini-2.5-flash` consistent with releasemanagement_agent and vesting_agent_test
+- All JSON loading uses `json.loads(path.read_text())` (not pd.read_json) to preserve nested blob structure before manual flattening
+- Paths resolved with `pathlib.Path(__file__).parent` — no hardcoded absolute paths
+- tax_id masking is enforced at the agent instruction level and documented in both SKILL.md files; the raw tax_id value is never transformed in tool.py since the data already has it masked (XXX-XX-XXXX)
+
+**Context for future contributors**
+- `adk web` to test this agent: cd into `app/agent/manager/sub_agent/participant_agent/` and run `adk web` with no arguments, or run from project root with `adk web app/agent/manager/sub_agent/participant_agent`
+- The agent has no ToolContext / session state — all three tools are stateless (unlike vesting_agent_test which uses state for token management)
+- analyze_participant_data always loads both files fresh on every call — no caching; suitable for the current data sizes
+- To add a new detail field from participant_details.json, add a flattening line in analyze_participant_data and document the column in skills/data_analysis/SKILL.md
+- Next step: wire participant_agent into the manager_agent routing in app/agent/manager/agent.py
+---

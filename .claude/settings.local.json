@@ -3,7 +3,8 @@
     "allow": [
       "Bash(git check-ignore:*)",
       "Bash(git rm:*)",
-      "Bash(head:*)"
+      "Bash(head:*)",
+      "Bash(/mnt/c/Users/vijay/PycharmProjects/epm-chatbot/progress.md:*)"
     ]
   }
 }
