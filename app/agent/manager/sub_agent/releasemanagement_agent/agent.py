@@ -12,7 +12,7 @@ tax_calculation_skill = load_skill_from_dir(
 )
 
 welcome_intent_skill = load_skill_from_dir(
-    pathlib.Path(__file__).parent / "skills" / "welcome_intent"
+    pathlib.Path(__file__).parent / "skills" / "agent-capabilities"
 )
 
 my_skill_toolset = skill_toolset.SkillToolset(

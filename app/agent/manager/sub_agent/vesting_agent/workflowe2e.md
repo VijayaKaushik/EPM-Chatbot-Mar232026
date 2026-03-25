@@ -6,9 +6,7 @@ Identify upcoming vesting (you said “wasting”) events
 
 Retrieve and analyze vesting data
 
-Simulate or approve releases
-
-Perform tax calculations
+Simulate or approve releases ( event   requires action Perform tax calculations
 
 Support filtering and batch processing
 

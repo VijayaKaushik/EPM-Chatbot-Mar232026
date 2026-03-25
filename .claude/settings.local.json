@@ -3,7 +3,16 @@
     "allow": [
       "Bash(git check-ignore:*)",
       "Bash(git rm:*)",
-      "Bash(head:*)"
+      "Bash(head:*)",
+      "Bash(/mnt/c/Users/vijay/PycharmProjects/epm-chatbot/progress.md:*)",
+      "Bash(find /mnt/c/Users/vijay/PycharmProjects/epm-chatbot/tests -name *.py)",
+      "Bash(.venv/bin/python -c \"from app.agent.manager.sub_agent.vesting_agent.agent import root_agent; print\\(root_agent.name\\)\")",
+      "Bash(/mnt/c/Users/vijay/PycharmProjects/epm-chatbot/.venv/bin/python -c \":*)",
+      "Read(//tmp/**)",
+      "Bash(python3 -c \":*)",
+      "Bash(python3:*)",
+      "Bash(/tmp/run_vesting_query.py:*)",
+      "Bash(ls /mnt/c/Users/vijay/PycharmProjects/epm-chatbot/.env*)"
     ]
   }
 }
