@@ -175,3 +175,33 @@
 - To add a new detail field from participant_details.json, add a flattening line in analyze_participant_data and document the column in skills/data_analysis/SKILL.md
 - Next step: wire participant_agent into the manager_agent routing in app/agent/manager/agent.py
 ---
+
+---
+### [2026-03-24 14:00 EST] Extended vesting_agent with release workflow (filter → tax → batch)
+
+**What changed**
+- Modified `app/agent/manager/sub_agent/vesting_agent/tool.py` — added `from datetime import datetime, timezone, timedelta` import and 3 new tools: `filter_participants`, `calculate_tax_for_batch`, `create_batch`
+- Modified `app/agent/manager/sub_agent/vesting_agent/agent.py` — imported 3 new tools, loaded `release_workflow_skill`, added it to `SkillToolset`, added RELEASE WORKFLOW section to agent instruction
+- Created `app/agent/manager/sub_agent/vesting_agent/skills/release_workflow/SKILL.md` — 7-stage workflow skill with tool signatures, table templates, critical rules, and multi-batch guidance
+- Modified all 4 CSVs in `vesting_agent/vesting_data/` — added `officer_status` column (after `employee_status`) and 6 batch columns at end: `batch_id`, `tax_amount`, `fmv`, `sales_price`, `batch_created_at`, `approval_url` (all empty/null for existing rows). Result: 34 columns per file.
+- Note: `vesting_agent_test/` was renamed to `vesting_agent/` in the working tree (git status shows RM). All work targets `vesting_agent/`.
+
+**Logic & data flow**
+- `filter_participants(vesting_date, grant_type, officer_status, tax_method)`: Loads CSV, isolates unbatched rows (batch_id null/empty), applies AND-logic filters, stores `active_filters`, `filtered_employee_ids`, and `_filtered_tranche_keys` (employee_id + tranche_id pairs) in state. Tranche-aware: multi-tranche employees produce multiple matched rows.
+- `calculate_tax_for_batch(fmv, sales_price)`: Reads `_filtered_tranche_keys` from state to match exact rows (falls back to employee_id if no tranche_id). Calls `_calculate_tax_amount` per row. Stores `tax_results` (employee_id → total tax, per spec), `_tax_rows` (row-level list for create_batch), `fmv`, `sales_price` in state. Random seed is `int(vesting_date.replace("-",""))` for determinism.
+- `create_batch()`: Reads all batch state, generates `BATCH-{8-hex-upper}` ID, updates CSV rows in-place using (employee_id, tranche_id) composite key for precise row matching. Writes batch_id, tax_amount, fmv, sales_price, batch_created_at (EST), approval_url. Clears all batch state after commit. Returns remaining_unbatched count.
+- State lifecycle: filter → tax → batch (each stage depends on previous). `create_batch` clears state so a subsequent batch on the same date requires a fresh `filter_participants` call.
+
+**Assumptions**
+- `officer_status` assigned to 7 employees based on job title (VP Engineering, Controller, Senior Counsel, Sales Director, Engineering Manager, HR Business Partner, Program Manager → Officer; all others → Non-Officer)
+- EST timestamp uses fixed UTC-5 offset (no DST handling) — suitable for test data
+- `tax_results` state key uses employee_id as key (per spec); per-row granularity preserved separately in `_tax_rows` private state key for create_batch
+- pytest not installed in the venv — test run via `uv run pytest` is unavailable; syntax validation passed via `ast.parse`
+
+**Context for future contributors**
+- The 3 new tools are append-only additions — existing 5 tools (get_vesting_dates, get_vesting_details, get_supported_fields, analyze_vesting_data, calculate_tax) are unchanged
+- Multi-tranche support: `_filtered_tranche_keys` stores (employee_id, tranche_id) pairs so create_batch updates the correct rows even when an employee has 2 tranches with different grant IDs
+- Batch columns are persistent in the CSV — once batched, a row's batch_id is set and it will never appear in future filter_participants calls
+- To create a second batch on the same vesting date: call filter_participants again with different (or no) filters — only still-unbatched rows are returned
+- Next step: wire vesting_agent into manager_agent routing
+---

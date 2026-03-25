@@ -1,11 +1,24 @@
+import math
 import os
 import pathlib
 import random
 import uuid
+from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional
 
 import pandas as pd
 from google.adk.tools.tool_context import ToolContext
+
+
+def _safe_records(df: pd.DataFrame) -> List[Dict]:
+    """Convert DataFrame rows to dicts, replacing all NaN/NA with None (valid JSON null)."""
+    rows = []
+    for record in df.to_dict(orient="records"):
+        rows.append({
+            k: None if (isinstance(v, float) and math.isnan(v)) else v
+            for k, v in record.items()
+        })
+    return rows
 
 VESTING_DATA_DIR = pathlib.Path(__file__).parent / "vesting_data"
 TAX_DATA_DIR = pathlib.Path(__file__).parent / "tax_data"
@@ -122,7 +135,7 @@ def get_vesting_details(vesting_date: str, tool_context: ToolContext) -> Dict:
         }
 
     df = pd.read_csv(csv_path, dtype={"employee_id": str})
-    participants: List[Dict] = df.to_dict(orient="records")
+    participants: List[Dict] = _safe_records(df)
 
     return {
         "status": "success",
@@ -433,4 +446,423 @@ def calculate_tax(vesting_date: str, tool_context: ToolContext) -> Dict:
         "output_file": str(output_path),
         #"summary": tax_df.to_dict(orient="records"),
         "message": f"Tax calculated for {len(tax_df)} participants. Output saved to tax_data/{vesting_date}.csv",
+    }
+
+
+def filter_participants(
+    vesting_date: str,
+    grant_type: Optional[str] = None,
+    officer_status: Optional[str] = None,
+    tax_method: Optional[str] = None,
+    tool_context: ToolContext = None,
+) -> Dict:
+    """
+    Filters unbatched participants for a vesting date by optional criteria.
+
+    Loads the vesting CSV for the given date and returns only rows where
+    batch_id is null/empty (unbatched). Applies grant_type, officer_status,
+    and tax_method filters using AND logic when provided. Stores the active
+    filters and matched employee IDs in session state for use by
+    calculate_tax_for_batch and create_batch.
+
+    Args:
+        vesting_date (str): Vesting date in YYYY-MM-DD format.
+        grant_type (str, optional): Filter by grant type (RSU / PSU / Stock Option).
+        officer_status (str, optional): Filter by officer status (Officer / Non-Officer).
+        tax_method (str, optional): Filter by tax method (Net Issuance / Sell-to-Cover / Cash Payment).
+        tool_context (ToolContext): ADK tool context for session state.
+
+    LLM Prompt Examples:
+        - "Filter RSU participants for 2026-05-15"
+        - "Show only Officers for the next vesting date"
+        - "Filter by Sell-to-Cover tax method"
+        - "Show all unbatched participants"
+
+    State Updates:
+        tool_context.state["active_filters"]: dict of applied filter values
+        tool_context.state["filtered_employee_ids"]: list of matched employee_ids
+        tool_context.state["_filtered_tranche_keys"]: list of (employee_id, tranche_id) tuples for row-level matching
+
+    Returns:
+        Dict containing:
+            status (str): success, no_match, or error
+            vesting_date (str): The requested date
+            filters_applied (Dict): Active filter values
+            total_matched (int): Number of rows matching filters
+            total_unbatched (int): Total unbatched rows before filtering
+            total_remaining_after_this (int): Unbatched rows that won't be in this batch
+            participants (List[Dict]): Matched participant rows
+            message (str): Status message
+    """
+    csv_path = VESTING_DATA_DIR / f"{vesting_date}.csv"
+    if not csv_path.exists():
+        return {
+            "status": "error",
+            "vesting_date": vesting_date,
+            "message": f"No vesting data found for date {vesting_date}",
+        }
+
+    df = pd.read_csv(csv_path, dtype={"employee_id": str})
+
+    # Treat all rows as unbatched if batch_id column doesn't exist yet
+    if "batch_id" not in df.columns:
+        df["batch_id"] = None
+
+    # Unbatched rows only
+    unbatched = df[df["batch_id"].isna() | (df["batch_id"] == "")]
+    total_unbatched = len(unbatched)
+
+    filtered = unbatched.copy()
+
+    # Apply AND filters
+    if grant_type:
+        filtered = filtered[filtered["grant_type"] == grant_type]
+    if officer_status and "officer_status" in filtered.columns:
+        filtered = filtered[filtered["officer_status"] == officer_status]
+    if tax_method:
+        filtered = filtered[filtered["tax_method"] == tax_method]
+
+    total_matched = len(filtered)
+
+    if total_matched == 0:
+        return {
+            "status": "no_match",
+            "vesting_date": vesting_date,
+            "filters_applied": {
+                "grant_type": grant_type,
+                "officer_status": officer_status,
+                "tax_method": tax_method,
+            },
+            "total_matched": 0,
+            "total_unbatched": total_unbatched,
+            "total_remaining_after_this": total_unbatched,
+            "participants": [],
+            "message": (
+                f"No unbatched participants match the given filters for {vesting_date}. "
+                f"Total unbatched: {total_unbatched}."
+            ),
+        }
+
+    # Store filter state and matched IDs
+    matched_ids = filtered["employee_id"].tolist()
+    has_tranche = "tranche_id" in filtered.columns
+    tranche_keys = (
+        list(zip(filtered["employee_id"].tolist(), filtered["tranche_id"].tolist()))
+        if has_tranche
+        else [(eid, None) for eid in matched_ids]
+    )
+
+    tool_context.state["active_filters"] = {
+        "vesting_date": vesting_date,
+        "grant_type": grant_type,
+        "officer_status": officer_status,
+        "tax_method": tax_method,
+    }
+    tool_context.state["filtered_employee_ids"] = matched_ids
+    tool_context.state["_filtered_tranche_keys"] = tranche_keys
+
+    total_remaining = total_unbatched - total_matched
+
+    return {
+        "status": "success",
+        "vesting_date": vesting_date,
+        "filters_applied": {
+            "grant_type": grant_type,
+            "officer_status": officer_status,
+            "tax_method": tax_method,
+        },
+        "total_matched": total_matched,
+        "total_unbatched": total_unbatched,
+        "total_remaining_after_this": total_remaining,
+        "participants": _safe_records(filtered),
+        "message": (
+            f"{total_matched} participants matched filters for {vesting_date}. "
+            f"{total_remaining} will remain unbatched after this batch."
+        ),
+    }
+
+
+def calculate_tax_for_batch(
+    fmv: float,
+    sales_price: float,
+    tool_context: ToolContext,
+) -> Dict:
+    """
+    Calculates tax for the currently filtered participants using provided FMV and sales price.
+
+    Reads filtered_employee_ids and active_filters from session state (set by
+    filter_participants). Computes tax per row using the same logic as calculate_tax.
+    Stores results in state for create_batch to consume.
+
+    Args:
+        fmv (float): Fair Market Value per share at release.
+        sales_price (float): Sale price per share.
+        tool_context (ToolContext): ADK tool context for session state.
+
+    LLM Prompt Examples:
+        - "Calculate tax with FMV 45.50 and sales price 52.00"
+        - "Compute taxes using FMV=50, sales price=60"
+        - "Run tax calculation"
+
+    Preconditions:
+        - filter_participants must have been called first for this session.
+
+    State Updates:
+        tool_context.state["tax_results"]: {employee_id: total_tax_amount}
+        tool_context.state["_tax_rows"]: per-row list for create_batch row matching
+        tool_context.state["fmv"]: fmv used
+        tool_context.state["sales_price"]: sales_price used
+
+    Returns:
+        Dict containing:
+            status (str): success or error
+            vesting_date (str): The vesting date being processed
+            fmv (float): FMV used
+            sales_price (float): Sales price used
+            participants_processed (int): Number of rows processed
+            summary (Dict): Aggregate totals
+            per_participant (List[Dict]): Row-level tax breakdown
+            message (str): Status message
+    """
+    active_filters = tool_context.state.get("active_filters")
+    filtered_ids = tool_context.state.get("filtered_employee_ids")
+
+    if not active_filters or filtered_ids is None:
+        return {
+            "status": "error",
+            "message": "No filtered participants in session. Call filter_participants first.",
+        }
+
+    vesting_date = active_filters["vesting_date"]
+    csv_path = VESTING_DATA_DIR / f"{vesting_date}.csv"
+    if not csv_path.exists():
+        return {
+            "status": "error",
+            "vesting_date": vesting_date,
+            "message": f"No vesting data file found for {vesting_date}",
+        }
+
+    df = pd.read_csv(csv_path, dtype={"employee_id": str})
+
+    # Match exact rows using tranche keys if available, otherwise employee_id
+    tranche_keys = tool_context.state.get("_filtered_tranche_keys")
+    has_tranche = "tranche_id" in df.columns and tranche_keys and tranche_keys[0][1] is not None
+
+    if has_tranche:
+        key_set = set((eid, tid) for eid, tid in tranche_keys)
+        mask = df.apply(lambda r: (r["employee_id"], r["tranche_id"]) in key_set, axis=1)
+    else:
+        id_set = set(filtered_ids)
+        mask = df["employee_id"].isin(id_set)
+
+    matched_df = df[mask].copy()
+
+    if matched_df.empty:
+        return {
+            "status": "error",
+            "vesting_date": vesting_date,
+            "message": "Matched rows not found in CSV. Session state may be stale.",
+        }
+
+    random.seed(int(vesting_date.replace("-", "")))
+
+    tax_rows = []
+    tax_results: Dict[str, float] = {}
+
+    for _, row in matched_df.iterrows():
+        tax_amount = _calculate_tax_amount(int(row["shares_released"]), fmv, sales_price)
+        emp_id = row["employee_id"]
+        tranche_id = row["tranche_id"] if (has_tranche and pd.notna(row.get("tranche_id"))) else None
+        net_val = row.get("net_value_delivered", 0)
+        net_val = float(net_val) if pd.notna(net_val) else 0.0
+
+        tax_rows.append({
+            "employee_id": emp_id,
+            "tranche_id": tranche_id,
+            "employee_name": row.get("employee_name", "") or "",
+            "grant_type": row.get("grant_type", "") or "",
+            "shares_released": int(row["shares_released"]),
+            "net_value_delivered": net_val,
+            "tax_amount": tax_amount,
+        })
+
+        # Accumulate per employee for the spec-required tax_results shape
+        tax_results[emp_id] = round(tax_results.get(emp_id, 0.0) + tax_amount, 2)
+
+    # Summaries
+    total_shares = sum(r["shares_released"] for r in tax_rows)
+    total_fmv_value = round(total_shares * fmv, 2)
+    total_tax = round(sum(r["tax_amount"] for r in tax_rows), 2)
+    total_net = round(sum(r["net_value_delivered"] for r in tax_rows), 2)
+
+    tool_context.state["tax_results"] = tax_results
+    tool_context.state["_tax_rows"] = tax_rows
+    tool_context.state["fmv"] = fmv
+    tool_context.state["sales_price"] = sales_price
+
+    return {
+        "status": "success",
+        "vesting_date": vesting_date,
+        "fmv": fmv,
+        "sales_price": sales_price,
+        "participants_processed": len(tax_rows),
+        "summary": {
+            "total_shares_released": total_shares,
+            "total_fmv": total_fmv_value,
+            "total_tax_withheld": total_tax,
+            "net_value_delivered": total_net,
+        },
+        "per_participant": tax_rows,
+        "message": (
+            f"Tax calculated for {len(tax_rows)} participant rows. "
+            f"Total tax withheld: ${total_tax:,.2f}. Call create_batch to commit."
+        ),
+    }
+
+
+def create_batch(tool_context: ToolContext) -> Dict:
+    """
+    Creates a release batch for the filtered and tax-calculated participants.
+
+    Reads active_filters, filtered_employee_ids, tax_results, fmv, and sales_price
+    from session state. Generates a unique batch_id, writes batch fields back into
+    the vesting CSV (batch_id, tax_amount, fmv, sales_price, batch_created_at,
+    approval_url), then clears batch-related state.
+
+    Args:
+        tool_context (ToolContext): ADK tool context for session state.
+
+    LLM Prompt Examples:
+        - "Create the batch"
+        - "Commit this batch and generate approval URL"
+        - "Go ahead and create the batch"
+        - "Submit the release batch"
+
+    Preconditions:
+        - filter_participants must have been called (active_filters, filtered_employee_ids in state)
+        - calculate_tax_for_batch must have been called (tax_results, fmv, sales_price in state)
+
+    Returns:
+        Dict containing:
+            status (str): success or error
+            batch_id (str): Generated batch identifier (e.g. BATCH-A1B2C3D4)
+            vesting_date (str): The vesting date processed
+            participants_batched (int): Number of rows written to this batch
+            remaining_unbatched (int): Rows still unbatched after this commit
+            approval_url (str): URL to approve this batch
+            summary (Dict): Aggregate totals for this batch
+            message (str): Status message
+    """
+    active_filters = tool_context.state.get("active_filters")
+    filtered_ids = tool_context.state.get("filtered_employee_ids")
+    tax_results = tool_context.state.get("tax_results")
+    tax_rows = tool_context.state.get("_tax_rows")
+    fmv = tool_context.state.get("fmv")
+    sales_price = tool_context.state.get("sales_price")
+
+    missing = []
+    if not active_filters:
+        missing.append("active_filters (call filter_participants first)")
+    if filtered_ids is None:
+        missing.append("filtered_employee_ids (call filter_participants first)")
+    if tax_results is None:
+        missing.append("tax_results (call calculate_tax_for_batch first)")
+    if fmv is None:
+        missing.append("fmv (call calculate_tax_for_batch first)")
+    if sales_price is None:
+        missing.append("sales_price (call calculate_tax_for_batch first)")
+
+    if missing:
+        return {
+            "status": "error",
+            "message": f"Missing required state: {'; '.join(missing)}",
+        }
+
+    vesting_date = active_filters["vesting_date"]
+    csv_path = VESTING_DATA_DIR / f"{vesting_date}.csv"
+    if not csv_path.exists():
+        return {
+            "status": "error",
+            "vesting_date": vesting_date,
+            "message": f"No vesting data file found for {vesting_date}",
+        }
+
+    batch_id = f"BATCH-{uuid.uuid4().hex[:8].upper()}"
+    approval_url = f"https://approval.dummy.com/{batch_id}"
+
+    # EST timestamp
+    est = timezone(timedelta(hours=-5))
+    batch_created_at = datetime.now(est).strftime("%Y-%m-%d %H:%M:%S EST")
+
+    df = pd.read_csv(csv_path, dtype={"employee_id": str})
+
+    # Ensure batch columns exist
+    for col in ["batch_id", "tax_amount", "fmv", "sales_price", "batch_created_at", "approval_url"]:
+        if col not in df.columns:
+            df[col] = None
+
+    # Build a per-row tax lookup keyed by (employee_id, tranche_id) or employee_id
+    has_tranche = "tranche_id" in df.columns and tax_rows and tax_rows[0].get("tranche_id") is not None
+    if has_tranche:
+        row_tax_map = {(r["employee_id"], r["tranche_id"]): r["tax_amount"] for r in tax_rows}
+    else:
+        row_tax_map = {r["employee_id"]: r["tax_amount"] for r in tax_rows}
+
+    tranche_keys = tool_context.state.get("_filtered_tranche_keys")
+    if has_tranche:
+        key_set = set((eid, tid) for eid, tid in tranche_keys)
+        match_mask = df.apply(lambda r: (r["employee_id"], r["tranche_id"]) in key_set, axis=1)
+    else:
+        id_set = set(filtered_ids)
+        match_mask = df["employee_id"].isin(id_set) & (df["batch_id"].isna() | (df["batch_id"] == ""))
+
+    participants_batched = match_mask.sum()
+
+    for idx in df[match_mask].index:
+        row = df.loc[idx]
+        emp_id = row["employee_id"]
+        key = (emp_id, row["tranche_id"]) if has_tranche else emp_id
+        df.at[idx, "batch_id"] = batch_id
+        df.at[idx, "tax_amount"] = row_tax_map.get(key, 0.0)
+        df.at[idx, "fmv"] = fmv
+        df.at[idx, "sales_price"] = sales_price
+        df.at[idx, "batch_created_at"] = batch_created_at
+        df.at[idx, "approval_url"] = approval_url
+
+    df.to_csv(csv_path, index=False)
+
+    # Count remaining unbatched rows
+    remaining_unbatched = int((df["batch_id"].isna() | (df["batch_id"] == "")).sum())
+
+    # Batch summary
+    total_shares = sum(r["shares_released"] for r in tax_rows)
+    total_tax = round(sum(r["tax_amount"] for r in tax_rows), 2)
+    total_net = round(sum(r["net_value_delivered"] for r in tax_rows), 2)
+
+    # Clear batch-related state
+    tool_context.state["active_filters"] = None
+    tool_context.state["filtered_employee_ids"] = None
+    tool_context.state["tax_results"] = None
+    tool_context.state["_tax_rows"] = None
+    tool_context.state["_filtered_tranche_keys"] = None
+    tool_context.state["fmv"] = None
+    tool_context.state["sales_price"] = None
+
+    return {
+        "status": "success",
+        "batch_id": batch_id,
+        "vesting_date": vesting_date,
+        "participants_batched": int(participants_batched),
+        "remaining_unbatched": remaining_unbatched,
+        "approval_url": approval_url,
+        "summary": {
+            "total_shares_released": total_shares,
+            "total_tax_withheld": total_tax,
+            "net_value_delivered": total_net,
+        },
+        "message": (
+            f"Batch {batch_id} created for {int(participants_batched)} participant rows. "
+            f"{remaining_unbatched} rows remain unbatched. "
+            f"Approval URL: {approval_url}"
+        ),
     }
