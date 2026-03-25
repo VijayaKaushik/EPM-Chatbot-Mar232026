@@ -143,65 +143,53 @@
 - To make FMV/sales_price user-configurable, add them as tool parameters and update the agent instruction
 ---
 
----
-### [2026-03-24 12:00 EST] Created participant_agent sub-agent
+### [2026-03-24 10:00 EST] Fixed PandasAI logging configuration
 
 **What changed**
-- Created `app/agent/manager/sub_agent/participant_agent/__init__.py` — empty package init
-- Created `app/agent/manager/sub_agent/participant_agent/tool.py` — 3 tools: `get_all_participants`, `get_participant_details`, `analyze_participant_data` with GeminiLLM + PandasAI
-- Created `app/agent/manager/sub_agent/participant_agent/agent.py` — `participant_agent` LlmAgent (gemini-2.5-flash) with all 3 tools + SkillToolset; exports `root_agent = participant_agent` for adk web
-- Created `app/agent/manager/sub_agent/participant_agent/skills/participant_lookup/SKILL.md` — 3-path skill: aggregation → analyze_participant_data, name lookup → get_all_participants + get_participant_details, direct ID lookup → get_participant_details
-- Created `app/agent/manager/sub_agent/participant_agent/skills/data_analysis/SKILL.md` — analysis skill with full flattened column schema reference and example queries
-- Did NOT modify or regenerate participant_data/participants.json or participant_data/participant_details.json (pre-existing)
+- Added logging configuration for PandasAI in `app/agent/manager/sub_agent/vesting_agent_test/tool.py`
+- Configured pandasai logger with DEBUG level and file handler writing to `pandasai.log`
+- Added proper log formatting with timestamps, logger name, level, and message
+- Set `propagate = False` to prevent duplicate logs
 
 **Logic & data flow**
-- `get_all_participants()` reads `participants.json` via `json.loads(path.read_text())` and returns all records with no filtering
-- `get_participant_details(employee_id)` reads both JSON files, exact-matches on employee_id, merges base record + detail record into one combined dict
-- `analyze_participant_data(query)` reads both files, flattens all nested blobs (current_address → current_city/state/country, office_address → office_city/country, tax_info → tax_residency/withholding_rate/w8_w9_status, account_info → account_status/account_type/bank_name/ach_status), merges on employee_id, passes merged DataFrame to PandasAI GeminiLLM wrapper
-- GeminiLLM class is a direct copy of the pattern from vesting_agent_test/tool.py — wraps google-genai client to satisfy PandasAI's LLM interface
-- Skills loaded via `load_skill_from_dir()` + `SkillToolset` — same pattern as vesting_agent_test
-- Agent routing instruction directs: aggregation/count/group → analyze_participant_data, named person → get_all_participants then get_participant_details, direct ID → get_participant_details
+- PandasAI uses Python's logging module but requires explicit configuration to write logs
+- Without this setup, pandasai logs were not being written to the `pandasai.log` file
+- The logging configuration enables debugging of PandasAI operations, query processing, and LLM interactions
 
 **Assumptions**
-- Used `gemini-2.5-flash` consistent with releasemanagement_agent and vesting_agent_test
-- All JSON loading uses `json.loads(path.read_text())` (not pd.read_json) to preserve nested blob structure before manual flattening
-- Paths resolved with `pathlib.Path(__file__).parent` — no hardcoded absolute paths
-- tax_id masking is enforced at the agent instruction level and documented in both SKILL.md files; the raw tax_id value is never transformed in tool.py since the data already has it masked (XXX-XX-XXXX)
+- DEBUG level logging is appropriate for development and troubleshooting
+- File-based logging is preferred over console output for pandasai operations
+- Log file location (`pandasai.log`) matches pandasai defaults
 
 **Context for future contributors**
-- `adk web` to test this agent: cd into `app/agent/manager/sub_agent/participant_agent/` and run `adk web` with no arguments, or run from project root with `adk web app/agent/manager/sub_agent/participant_agent`
-- The agent has no ToolContext / session state — all three tools are stateless (unlike vesting_agent_test which uses state for token management)
-- analyze_participant_data always loads both files fresh on every call — no caching; suitable for the current data sizes
-- To add a new detail field from participant_details.json, add a flattening line in analyze_participant_data and document the column in skills/data_analysis/SKILL.md
-- Next step: wire participant_agent into the manager_agent routing in app/agent/manager/agent.py
+- PandasAI logs are now written to `pandasai.log` in the project root
+- Log format includes timestamps for debugging timing issues
+- If pandasai logs are still missing, check that the file handler has write permissions
+- For production, consider adjusting log level from DEBUG to INFO or WARNING
 ---
 
----
-### [2026-03-24 14:00 EST] Extended vesting_agent with release workflow (filter → tax → batch)
+### [2026-03-24 13:00 EST] Investigated ADK query reformatting behavior
 
 **What changed**
-- Modified `app/agent/manager/sub_agent/vesting_agent/tool.py` — added `from datetime import datetime, timezone, timedelta` import and 3 new tools: `filter_participants`, `calculate_tax_for_batch`, `create_batch`
-- Modified `app/agent/manager/sub_agent/vesting_agent/agent.py` — imported 3 new tools, loaded `release_workflow_skill`, added it to `SkillToolset`, added RELEASE WORKFLOW section to agent instruction
-- Created `app/agent/manager/sub_agent/vesting_agent/skills/release_workflow/SKILL.md` — 7-stage workflow skill with tool signatures, table templates, critical rules, and multi-batch guidance
-- Modified all 4 CSVs in `vesting_agent/vesting_data/` — added `officer_status` column (after `employee_status`) and 6 batch columns at end: `batch_id`, `tax_amount`, `fmv`, `sales_price`, `batch_created_at`, `approval_url` (all empty/null for existing rows). Result: 34 columns per file.
-- Note: `vesting_agent_test/` was renamed to `vesting_agent/` in the working tree (git status shows RM). All work targets `vesting_agent/`.
+- Added debug logging in `analyze_vesting_data()` to capture the original query received by the tool
+- Added `print(f"Original query received: {query}")` before PandasAI processing
+- This helps identify where query reformatting occurs in the ADK pipeline
 
 **Logic & data flow**
-- `filter_participants(vesting_date, grant_type, officer_status, tax_method)`: Loads CSV, isolates unbatched rows (batch_id null/empty), applies AND-logic filters, stores `active_filters`, `filtered_employee_ids`, and `_filtered_tranche_keys` (employee_id + tranche_id pairs) in state. Tranche-aware: multi-tranche employees produce multiple matched rows.
-- `calculate_tax_for_batch(fmv, sales_price)`: Reads `_filtered_tranche_keys` from state to match exact rows (falls back to employee_id if no tranche_id). Calls `_calculate_tax_amount` per row. Stores `tax_results` (employee_id → total tax, per spec), `_tax_rows` (row-level list for create_batch), `fmv`, `sales_price` in state. Random seed is `int(vesting_date.replace("-",""))` for determinism.
-- `create_batch()`: Reads all batch state, generates `BATCH-{8-hex-upper}` ID, updates CSV rows in-place using (employee_id, tranche_id) composite key for precise row matching. Writes batch_id, tax_amount, fmv, sales_price, batch_created_at (EST), approval_url. Clears all batch state after commit. Returns remaining_unbatched count.
-- State lifecycle: filter → tax → batch (each stage depends on previous). `create_batch` clears state so a subsequent batch on the same date requires a fresh `filter_participants` call.
+- Query reformatting happens in the ADK framework's LlmAgent tool calling mechanism
+- The ADK agent reformulates user queries to make them more precise for tool calling
+- Original query: "name of employess with RSUs" 
+- Reformatted query: "List the names of employees who have RSU as their grant type"
+- Reformatting occurs before the query reaches our tool function
 
 **Assumptions**
-- `officer_status` assigned to 7 employees based on job title (VP Engineering, Controller, Senior Counsel, Sales Director, Engineering Manager, HR Business Partner, Program Manager → Officer; all others → Non-Officer)
-- EST timestamp uses fixed UTC-5 offset (no DST handling) — suitable for test data
-- `tax_results` state key uses employee_id as key (per spec); per-row granularity preserved separately in `_tax_rows` private state key for create_batch
-- pytest not installed in the venv — test run via `uv run pytest` is unavailable; syntax validation passed via `ast.parse`
+- ADK's query reformatting is intentional behavior to improve tool calling accuracy
+- The reformatting makes queries more structured and precise for data analysis
+- This is happening in the ADK framework's internal processing, not in our code
 
 **Context for future contributors**
-- The 3 new tools are append-only additions — existing 5 tools (get_vesting_dates, get_vesting_details, get_supported_fields, analyze_vesting_data, calculate_tax) are unchanged
-- Multi-tranche support: `_filtered_tranche_keys` stores (employee_id, tranche_id) pairs so create_batch updates the correct rows even when an employee has 2 tranches with different grant IDs
-- Batch columns are persistent in the CSV — once batched, a row's batch_id is set and it will never appear in future filter_participants calls
-- To create a second batch on the same vesting date: call filter_participants again with different (or no) filters — only still-unbatched rows are returned
-- Next step: wire vesting_agent into manager_agent routing
+- The ADK framework automatically reformulates natural language queries before calling tools
+- This behavior improves query accuracy but may mask the original user intent
+- If you need to see the original query, check the debug logs added to the tool
+- The reformatting happens at the ADK agent level, not in skills or tool code
 ---
