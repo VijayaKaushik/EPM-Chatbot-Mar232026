@@ -35,12 +35,17 @@ exclusively on the remaining unbatched participants.
 ## Stage 1: Get Vesting Date
 
 ### Tool
-**`get_vesting_dates(count=1)`**
+**`get_vesting_dates(client_id="CLIENT_001", count=1)`**
 
 ### Instructions
 - If admin already mentioned the date in their message, use it directly — skip this stage
-- Otherwise call `get_vesting_dates(count=1)` and present the next upcoming date
+- Otherwise call `get_vesting_dates(client_id="CLIENT_001", count=1)` and present the next upcoming date
 - Confirm with admin: "The next vesting date is YYYY-MM-DD. Would you like to proceed with this date?"
+
+### Tool Parameters
+- `client_id`: Client identifier (defaults to "CLIENT_001")
+- `count`: Number of future dates to return (defaults to 1)
+- Other parameters available: `month`, `year`, `start_date`, `end_date` for different query patterns
 
 ---
 

@@ -10,6 +10,107 @@ import pandas as pd
 from google.adk.tools.tool_context import ToolContext
 
 
+class VestingDateService:
+    """Service to manage vesting dates from CSV, supporting dynamic filtering."""
+
+    def __init__(self, csv_path: pathlib.Path = None):
+        """
+        Initialize the service with the vesting dates CSV.
+
+        Args:
+            csv_path (pathlib.Path, optional): Path to vesting_dates.csv.
+                Defaults to vesting_data/vesting_dates.csv.
+        """
+        if csv_path is None:
+            csv_path = pathlib.Path(__file__).parent / "vesting_data" / "vesting_dates.csv"
+        self.csv_path = csv_path
+        self._df = None
+
+    def _load_csv(self) -> pd.DataFrame:
+        """Load and cache the vesting dates CSV."""
+        if self._df is None:
+            if not self.csv_path.exists():
+                raise FileNotFoundError(f"Vesting dates CSV not found: {self.csv_path}")
+            self._df = pd.read_csv(self.csv_path, dtype={"client_id": str, "vesting_date": str})
+        return self._df
+
+    def get_all_dates(self, client_id: str) -> List[str]:
+        """
+        Get all vesting dates for a client, sorted ascending.
+
+        Args:
+            client_id (str): Client identifier.
+
+        Returns:
+            List[str]: Sorted list of vesting dates (YYYY-MM-DD format).
+        """
+        df = self._load_csv()
+        dates = df[df["client_id"] == client_id]["vesting_date"].tolist()
+        return sorted(dates)
+
+    def get_next_n_dates(self, client_id: str, count: int = 1) -> List[str]:
+        """
+        Get the next N vesting dates greater than today for a client.
+
+        Args:
+            client_id (str): Client identifier.
+            count (int): Number of future dates to return. Defaults to 1.
+
+        Returns:
+            List[str]: List of next N vesting dates (or fewer if not enough future dates).
+        """
+        all_dates = self.get_all_dates(client_id)
+        today = datetime.now().date()
+        future_dates = [d for d in all_dates if datetime.strptime(d, "%Y-%m-%d").date() > today]
+        return future_dates[:count]
+
+    def get_dates_in_month(self, client_id: str, month: int = None, year: int = None) -> List[str]:
+        """
+        Get all vesting dates in a specific month/year for a client.
+
+        Args:
+            client_id (str): Client identifier.
+            month (int, optional): Month (1-12). If None, uses current month.
+            year (int, optional): Year (YYYY). If None, uses current year.
+
+        Returns:
+            List[str]: List of vesting dates in the specified month.
+        """
+        if month is None:
+            month = datetime.now().month
+        if year is None:
+            year = datetime.now().year
+
+        all_dates = self.get_all_dates(client_id)
+        month_dates = [
+            d for d in all_dates
+            if datetime.strptime(d, "%Y-%m-%d").month == month
+            and datetime.strptime(d, "%Y-%m-%d").year == year
+        ]
+        return month_dates
+
+    def get_dates_in_range(self, client_id: str, start_date: str, end_date: str) -> List[str]:
+        """
+        Get all vesting dates between start_date and end_date (inclusive) for a client.
+
+        Args:
+            client_id (str): Client identifier.
+            start_date (str): Start date in YYYY-MM-DD format.
+            end_date (str): End date in YYYY-MM-DD format.
+
+        Returns:
+            List[str]: List of vesting dates in the specified range.
+        """
+        all_dates = self.get_all_dates(client_id)
+        start = datetime.strptime(start_date, "%Y-%m-%d").date()
+        end = datetime.strptime(end_date, "%Y-%m-%d").date()
+        range_dates = [
+            d for d in all_dates
+            if start <= datetime.strptime(d, "%Y-%m-%d").date() <= end
+        ]
+        return range_dates
+
+
 def _safe_records(df: pd.DataFrame) -> List[Dict]:
     """Convert DataFrame rows to dicts, replacing all NaN/NA with None (valid JSON null)."""
     rows = []
@@ -52,30 +153,89 @@ VESTING_FIELDS = [
 ]
 
 
-def get_vesting_dates(count: Optional[int] = 1) -> Dict:
+def get_vesting_dates(
+    client_id: str = "CLIENT_001",
+    count: Optional[int] = None,
+    month: Optional[int] = None,
+    year: Optional[int] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+) -> Dict:
     """
-    Returns the next upcoming vesting dates.
+    Returns vesting dates for a client from CSV, with flexible filtering.
+
+    Loads vesting dates from vesting_dates.csv and filters based on the query parameters.
+    Supports multiple query patterns through optional parameters.
 
     Args:
-        count (int, optional): Number of upcoming vesting dates to return.
-            Defaults to 1 if not provided.
+        client_id (str): Client identifier. Defaults to "CLIENT_001".
+        count (int, optional): Return the next N future dates. If provided, ignores month/year/range.
+        month (int, optional): Filter by month (1-12). If None, uses current month.
+        year (int, optional): Filter by year (YYYY). If None, uses current year.
+        start_date (str, optional): Start date for range filter (YYYY-MM-DD). Requires end_date.
+        end_date (str, optional): End date for range filter (YYYY-MM-DD). Requires start_date.
 
-    Example user prompts:
-        - "Give me next vesting date"
-        - "Give me next 3 vesting dates"
+    LLM Prompt Examples:
+        - "Give me next vesting date" → count=1
+        - "Give me next 3 vesting dates" → count=3
+        - "Show all vesting dates in June" → month=6
+        - "Get vesting dates for May 2027" → month=5, year=2027
+        - "List vesting dates from 2026-05-01 to 2026-12-31" → start_date="2026-05-01", end_date="2026-12-31"
+        - "Get all vesting dates for CLIENT_001" → (no filters, returns all)
 
     Returns:
         Dict:
-            status (str): success
-            vesting_dates (List[str]): List of vesting dates in YYYY-MM-DD format
+            status (str): success or error
+            vesting_dates (List[str]): List of matching vesting dates in YYYY-MM-DD format
+            client_id (str): The client ID queried
+            filter_type (str): Type of filter applied (all, next_n, month, range)
+            total_found (int): Number of dates found
+            message (str): Status message
     """
-    all_vesting_dates = [
-        "2026-05-15",
-        "2026-06-15",
-        "2026-09-15",
-        "2026-12-15",
-    ]
-    return {"status": "success", "vesting_dates": all_vesting_dates[:count]}
+    try:
+        service = VestingDateService()
+        
+        # Determine filter type and get dates
+        if count is not None:
+            # Next N dates
+            dates = service.get_next_n_dates(client_id, count)
+            filter_type = f"next_{count}"
+        elif start_date and end_date:
+            # Date range
+            dates = service.get_dates_in_range(client_id, start_date, end_date)
+            filter_type = f"range_{start_date}_to_{end_date}"
+        elif month is not None:
+            # Month filter (use provided year or current year)
+            dates = service.get_dates_in_month(client_id, month, year)
+            month_name = datetime(2000, month, 1).strftime("%B")
+            filter_type = f"{month_name}_{year or datetime.now().year}"
+        else:
+            # All dates for client
+            dates = service.get_all_dates(client_id)
+            filter_type = "all"
+
+        return {
+            "status": "success",
+            "vesting_dates": dates,
+            "client_id": client_id,
+            "filter_type": filter_type,
+            "total_found": len(dates),
+            "message": f"Retrieved {len(dates)} vesting date(s) for {client_id} ({filter_type})",
+        }
+    except FileNotFoundError as e:
+        return {
+            "status": "error",
+            "vesting_dates": [],
+            "client_id": client_id,
+            "message": f"Error loading vesting dates: {str(e)}",
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "vesting_dates": [],
+            "client_id": client_id,
+            "message": f"Failed to retrieve vesting dates: {str(e)}",
+        }
 
 
 def get_vesting_details(vesting_date: str, tool_context: ToolContext) -> Dict:
