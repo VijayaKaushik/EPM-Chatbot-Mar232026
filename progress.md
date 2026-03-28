@@ -538,3 +538,73 @@
 - `get_grants_by_employee_ids` is the orchestrator-facing tool — it deliberately returns summaries, not full records, to keep cross-agent messages small
 - Test standalone: `PYTHONPATH=. adk web app/agent/manager/sub_agent/grant_agent` (root_agent is defined)
 ---
+
+---
+### [2026-03-28 EST] Wired grant_agent into orchestrator
+
+**What changed**
+- Modified `app/agent/orchestrator/agent.py`:
+  - Added `from app.agent.manager.sub_agent.grant_agent.agent import grant_agent`
+  - Added `AgentTool(agent=grant_agent)` to orchestrator tools list
+  - Added `route = "grant_agent"` handling block to orchestrator instruction
+  - Added grant_agent description under `## What You Know About Your Agents`
+  - Added `## STRICT ROUTING ENFORCEMENT` block to prevent orchestrator from answering grant questions directly
+  - Added "Never answer grant questions yourself" to Critical Rules
+- Modified `app/agent/orchestrator/planner.py`:
+  - Added `### grant_agent` agent section with fields and description
+  - Added `RULE 2b` for grant/plan routing
+  - Added 9 new few-shot examples covering standalone grant queries and cross-agent joins involving grants
+  - Updated output format `route` enum to include `"grant_agent"`
+
+**Logic & data flow**
+- Planner classifies grant queries to `route = "grant_agent"` for standalone questions and `route = "both"` for cross-agent joins involving grants
+- `AgentTool(agent=grant_agent)` gives orchestrator direct call access to grant_agent without sub_agents hierarchy
+- grant_agent uses ADK artifacts — self-loads on first call, orchestrator only needs to pass the query
+
+**Assumptions**
+- Planner standalone test: query 1 ("Total grants by grant type") → `grant_agent` ✓; query 3 ("Unvested grants for participants in next release") → `both` with `step_1: vesting_agent, step_2: grant_agent` ✓
+- Query 2 ("Show grant types associated with officers") routed to `vesting_agent` instead of expected `both` — vesting data also has `grant_type` and `officer_status`, so planner reasonably chose vesting_agent; may need additional few-shot reinforcement if users hit this pattern
+
+**Context for future contributors**
+- Import chain verified: `root_agent.name = "orchestrator"`, agent tools include `['vesting_agent', 'participant_agent', 'grant_agent']`
+- grant_agent's artifact strategy means it never re-reads disk within a session — orchestrator does not need to pass data, only the query
+- Cross-agent joins with grants use `employee_id` as the join key across all three agents
+---
+
+---
+### [2026-03-28 EST] Created user_guide_agent with FAISS semantic search on PDF documentation
+
+**What changed**
+- Created `app/agent/manager/sub_agent/user_guide_agent/` full directory structure
+- Copied `release_vesting_user_guide.pdf` and `participant_grant_user_guide.pdf` into `docs/`
+- Installed `faiss-cpu`, `pypdf2`, `sentence-transformers` via `uv add`
+- Created `tool.py` with 3 async tools + 2 internal helpers:
+  - `_extract_text_from_pdfs()` — reads all PDFs from `docs/`, splits into 500-char chunks with 100-char overlap; returns list of `{text, source, page, chunk_index}` dicts
+  - `_get_embeddings(texts, api_key)` — calls Gemini `text-embedding-004` model; returns `np.float32` array
+  - `build_index(tool_context)` — extracts chunks, generates embeddings, builds `faiss.IndexFlatL2`, serializes index via pickle, saves both index (`user_guide_index.pkl`) and chunks (`user_guide_chunks.json`) to ADK artifacts; returns from artifact on subsequent calls
+  - `search_guides(query, tool_context, top_k=3)` — loads FAISS index from artifact, embeds query, runs `index.search`, retrieves top-k chunks, synthesizes answer via Gemini with structured ANSWER/SOURCE/NEXT ACTION format; falls back to disk rebuild if artifact unavailable
+  - `list_topics(tool_context)` — summarizes document coverage (chunks per doc, pages covered) from artifact
+- Created `agent.py` — `user_guide_agent` LlmAgent with artifact-first instruction and full logging callbacks
+- Created `skills/agent_capabilities/SKILL.md` and `skills/guide_search/SKILL.md`
+
+**Logic & data flow**
+- Chunking: each PDF page text is split into 500-char sliding windows with 100-char overlap to preserve context at chunk boundaries
+- Embedding: Gemini `text-embedding-004` generates one embedding per chunk; these are stacked into a float32 numpy array
+- FAISS `IndexFlatL2` stores all chunk embeddings; query embedding is compared via L2 distance to find top-k nearest chunks
+- Artifact strategy mirrors grant_agent: `build_index` saves pickled FAISS index + raw chunks JSON to ADK artifacts; `search_guides` loads from artifact on every subsequent call; `_save_artifact` errors are swallowed so a broken artifact service doesn't crash the tool
+- Synthesis: top-k matched chunks are concatenated with source metadata into a context string; Gemini `gemini-2.5-flash` synthesizes a structured answer with ANSWER / SOURCE / NEXT ACTION fields
+- Fallback: if artifact load fails in `search_guides`, chunks are re-extracted from disk and index rebuilt in-memory for that call
+
+**Assumptions**
+- Import chain verified: `root_agent.name = "user_guide_agent"` ✓
+- PDFs confirmed in `docs/`: `participant_grant_user_guide.pdf`, `release_vesting_user_guide.pdf` ✓
+- `sentence-transformers` installed but not used — embeddings go through Gemini API, not local model
+- `user_guide_agent` is not yet wired into orchestrator or manager — standalone only at this stage
+
+**Context for future contributors**
+- To wire into orchestrator: import `user_guide_agent`, add `AgentTool(agent=user_guide_agent)` to tools list, add routing rules and few-shot examples in `planner.py`
+- The pickled FAISS index is stored as `application/octet-stream` in ADK artifact — loaded via `index_artifact.inline_data.data`, not `.text`
+- Chunk size (500) and overlap (100) are tunable constants at top of `tool.py` — larger chunks = more context per result, smaller = more precise retrieval
+- `build_index` is idempotent — safe to call multiple times; returns early from artifact if already built
+- To add more PDFs: drop them in `docs/` and call `build_index` again (or clear the artifact to force rebuild)
+---

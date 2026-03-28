@@ -49,11 +49,26 @@ async def _load_artifact(tool_context: ToolContext) -> Optional[Dict]:
 
 async def _save_artifact(tool_context: ToolContext, data: Dict,
                          key: str = ARTIFACT_KEY) -> None:
-    """Save data dict to ADK artifact."""
-    await tool_context.save_artifact(
-        filename=key,
-        artifact=genai_types.Part(text=json.dumps(data))
-    )
+    """Save data dict to ADK artifact. Silently skips if service unavailable."""
+    try:
+        await tool_context.save_artifact(
+            filename=key,
+            artifact=genai_types.Part(text=json.dumps(data))
+        )
+    except Exception:
+        pass
+
+
+async def _get_data(tool_context: ToolContext) -> Optional[Dict]:
+    """Load from artifact first, fall back to disk if artifact unavailable."""
+    data = await _load_artifact(tool_context)
+    if data:
+        print(f"\n📦 DATA source: artifact")
+        return data
+    if GRANT_DATA_PATH.exists():
+        print(f"\n📦 DATA source: disk (artifact unavailable)")
+        return json.loads(GRANT_DATA_PATH.read_text())
+    return None
 
 
 def _compute_summary(data: Dict) -> Dict:
@@ -92,6 +107,7 @@ async def load_grants(tool_context: ToolContext) -> Dict:
     """
     # Check if artifact already exists
     existing = await _load_artifact(tool_context)
+    print(f"\n📦 LOAD_GRANTS source: {'artifact' if existing else 'disk'}\n")
     if existing:
         summary = _compute_summary(existing)
         return {
@@ -149,18 +165,15 @@ async def query_grants(query: str, tool_context: ToolContext) -> Dict:
     try:
         from pandasai.agent import Agent as PaiAgent
 
-        # Load from artifact or disk
-        data = await _load_artifact(tool_context)
+        print(f"\n🔍 QUERY_GRANTS source: artifact | query: {query}\n")
+        data = await _get_data(tool_context)
         if not data:
-            load_result = await load_grants(tool_context)
-            if load_result["status"] != "success":
-                return {
-                    "status":  "error",
-                    "query":   query,
-                    "result":  None,
-                    "message": "Failed to load grant data"
-                }
-            data = await _load_artifact(tool_context)
+            return {
+                "status":  "error",
+                "query":   query,
+                "result":  None,
+                "message": "Failed to load grant data"
+            }
 
         # Flatten grants list to DataFrame
         df = pd.DataFrame(data["grants"])
@@ -222,10 +235,10 @@ async def get_grant_details(
     Returns:
       status, grant_id, grant (full record), message
     """
-    data = await _load_artifact(tool_context)
+    print(f"\n🔎 GET_GRANT_DETAILS source: artifact | grant_id: {grant_id}\n")
+    data = await _get_data(tool_context)
     if not data:
-        await load_grants(tool_context)
-        data = await _load_artifact(tool_context)
+        return {"status": "error", "grant_id": grant_id, "message": "Failed to load grant data"}
 
     match = next(
         (g for g in data["grants"] if g["grant_id"] == grant_id),
@@ -273,10 +286,10 @@ async def get_grants_by_employee_ids(
       status, source, employee_ids, total_grants,
       grant_ids, by_employee (summary per employee), message
     """
-    data = await _load_artifact(tool_context)
+    print(f"\n🔗 GET_GRANTS_BY_EMP_IDS source: artifact | count: {len(employee_ids)}\n")
+    data = await _get_data(tool_context)
     if not data:
-        await load_grants(tool_context)
-        data = await _load_artifact(tool_context)
+        return {"status": "error", "employee_ids": employee_ids, "message": "Failed to load grant data"}
 
     matched = [
         g for g in data["grants"]
