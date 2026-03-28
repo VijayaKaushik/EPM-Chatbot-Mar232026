@@ -31,6 +31,19 @@ kyc_status, insider_status, blackout_status, current_address,
 office_address, w8_w9_status, withholding_rate, ach_status,
 account_info, grant_eligible, broker_code, client_id
 
+### grant_agent
+Use for ALL questions about grants, plans, grant types,
+unvested/vested shares, grant value, performance conditions,
+grant status, expiry dates, cliff details.
+Links to other agents via employee_id and grant_id.
+
+Grant data fields:
+grant_id, employee_id, employee_name, plan_id, plan_name,
+grant_type, grant_date, expiry_date, total_shares_granted,
+vested_shares, unvested_shares, percentage_vested,
+grant_value_at_grant_date, vesting_schedule, cliff_months,
+performance_conditions, grant_status
+
 ## Routing Rules
 
 RULE 1 — Check session context first:
@@ -43,6 +56,10 @@ Dates, schedules, releases, participants in release,
 department, country, email, employee_status, officer_status,
 grant type, shares, FMV, tax within release, batch creation,
 simulation, release workflow.
+
+RULE 2b — grant_agent for grant/plan questions:
+Grants, plans, unvested shares, grant value, performance
+conditions, grant status, grant expiry, cliff details.
 
 RULE 3 — participant_agent only for compliance fields:
 KYC, insider, blackout, W8/W9, ACH, address, account info.
@@ -154,6 +171,67 @@ Response: {"route": "participant_agent", "intent": "kyc_status",
  "requires_context": true, "cross_agent": false,
  "join_key": "employee_id", "join_field": "kyc_status"}
 
+Query: "Total grants by grant type"
+Response: {"route": "grant_agent", "intent": "grant_analysis",
+ "requires_context": false, "cross_agent": false,
+ "step_1": null, "step_2": null, "join_key": null,
+ "join_field": null, "operation": null, "context_key": null}
+
+Query: "Which plan has maximum unvested shares?"
+Response: {"route": "grant_agent", "intent": "plan_analysis",
+ "requires_context": false, "cross_agent": false,
+ "step_1": null, "step_2": null, "join_key": null,
+ "join_field": null, "operation": null, "context_key": null}
+
+Query: "How many active RSU grants are there?"
+Response: {"route": "grant_agent", "intent": "grant_analysis",
+ "requires_context": false, "cross_agent": false,
+ "step_1": null, "step_2": null, "join_key": null,
+ "join_field": null, "operation": null, "context_key": null}
+
+Query: "Show grants expiring in next 90 days"
+Response: {"route": "grant_agent", "intent": "grant_expiry",
+ "requires_context": false, "cross_agent": false,
+ "step_1": null, "step_2": null, "join_key": null,
+ "join_field": null, "operation": null, "context_key": null}
+
+Query: "Which employees have performance condition grants?"
+Response: {"route": "grant_agent", "intent": "grant_analysis",
+ "requires_context": false, "cross_agent": false,
+ "step_1": null, "step_2": null, "join_key": null,
+ "join_field": null, "operation": null, "context_key": null}
+
+Query: "Show grant types associated with officers"
+Response: {"route": "both",
+ "intent": "cross_agent_officer_grants",
+ "requires_context": false, "cross_agent": true,
+ "step_1": "participant_agent", "step_2": "grant_agent",
+ "join_key": "employee_id", "join_field": "officer_status",
+ "operation": null, "context_key": null}
+
+Query: "Unvested grants for participants in next release"
+Response: {"route": "both",
+ "intent": "cross_agent_vesting_grants",
+ "requires_context": false, "cross_agent": true,
+ "step_1": "vesting_agent", "step_2": "grant_agent",
+ "join_key": "employee_id", "join_field": "unvested_shares",
+ "operation": null, "context_key": null}
+
+Query: "Which insiders have PSU grants?"
+Response: {"route": "both",
+ "intent": "cross_agent_insider_grants",
+ "requires_context": false, "cross_agent": true,
+ "step_1": "participant_agent", "step_2": "grant_agent",
+ "join_key": "employee_id", "join_field": "insider_status",
+ "operation": null, "context_key": null}
+
+Query: "What's the plan id for the plan with most unvested shares?"
+Response: {"route": "grant_agent", "intent": "plan_analysis",
+ "requires_context": true, "cross_agent": false,
+ "step_1": null, "step_2": null, "join_key": null,
+ "join_field": null, "operation": "filter",
+ "context_key": "plan_id"}
+
 Query: "Are there common participants across those 3 vestings?"
 Response: {"route": "context_only",
  "intent": "set_intersection",
@@ -175,7 +253,7 @@ Response: {"route": "context_only",
 ## Output Format
 Always respond with ONLY valid JSON, no other text:
 {
-  "route": "vesting_agent" | "participant_agent" | "both" | "context_only",
+  "route": "vesting_agent" | "participant_agent" | "grant_agent" | "both" | "context_only",
   "intent": str,
   "requires_context": bool,
   "cross_agent": bool,

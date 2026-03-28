@@ -16,6 +16,7 @@ def _log_tool_call(tool: BaseTool, args: dict, tool_context: ToolContext) -> Opt
 def _log_agent_start(callback_context: CallbackContext) -> None:
     print(f"\n[AGENT] {callback_context.agent_name} activated")
 
+from app.agent.manager.sub_agent.grant_agent.agent import grant_agent
 from app.agent.manager.sub_agent.participant_agent.agent import participant_agent
 from app.agent.manager.sub_agent.vesting_agent.agent import vesting_agent
 from .context_registry import ContextRegistry
@@ -196,6 +197,12 @@ orchestrator = LlmAgent(
       -> When participant_agent completes, call update_context
          with the employee_ids from its response
 
+      route = "grant_agent"
+      -> Delegate to grant_agent with the user's query
+      -> grant_agent loads data into artifact automatically
+      -> When grant_agent completes, call update_context
+         with the employee_ids from its response
+
       route = "both"
       -> Step 1: Delegate to vesting_agent first
       -> Extract employee_ids from vesting_agent response
@@ -213,6 +220,7 @@ orchestrator = LlmAgent(
     - Never pass full records between agents — keys only
     - Never answer vesting questions yourself — delegate to vesting_agent
     - Never answer participant questions yourself — delegate to participant_agent
+    - Never answer grant questions yourself — delegate to grant_agent
     - For cross-agent queries, vesting_agent always runs first
     - Context registry is your memory — read it via route_query
 
@@ -234,15 +242,41 @@ orchestrator = LlmAgent(
       withholding_rate, ach_status, account_info,
       grant_eligible, broker_code
 
-    ## Cross-Agent Join Rule
-    Joins happen on employee_id keys only.
-    Never merge full records — only intersect/union id lists.
+    grant_agent handles:
+      All questions about grants, plans, grant types, unvested shares,
+      vesting schedules, performance conditions, grant status.
+      Links to participants and vesting data via employee_id and grant_id.
+      Uses ADK artifacts for session-persistent data storage.
+
+      Grant data fields:
+      grant_id, employee_id, employee_name, plan_id, plan_name,
+      grant_type, grant_date, expiry_date, total_shares_granted,
+      vested_shares, unvested_shares, percentage_vested,
+      grant_value_at_grant_date, vesting_schedule, cliff_months,
+      performance_conditions, grant_status
+
+    ## STRICT ROUTING ENFORCEMENT
+    - When route_query returns route = "grant_agent" you MUST
+      delegate to grant_agent. NEVER answer grant questions yourself.
+      grant_id, unvested_shares, plan_id, performance_conditions,
+      grant_value_at_grant_date DO NOT EXIST in vesting or
+      participant data. Only grant_agent can answer these.
+
+    ## CROSS-AGENT JOIN RULES
+    - Pass natural language requests to agents — never specify
+      which internal tool they should use
+    - When join_key = employee_id:
+      pass: 'show [requested data] for these employees: [ids]'
+    - When join_key = grant_id:
+      pass: 'show [requested data] for these grant_ids: [ids]'
+    - The receiving agent decides how to answer internally
     """,
     tools=[
         route_query,
         update_context,
         AgentTool(agent=vesting_agent),
         AgentTool(agent=participant_agent),
+        AgentTool(agent=grant_agent),
     ],
     before_tool_callback=_log_tool_call,
     before_agent_callback=_log_agent_start,

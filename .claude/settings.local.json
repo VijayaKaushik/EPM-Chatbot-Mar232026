@@ -17,7 +17,16 @@
       "Bash(timeout 30 uv run python -c 'print\\(\"\"hello\"\"\\)')",
       "Bash(printenv GOOGLE_API_KEY)",
       "Bash(PYTHONPATH=. uv run python -c \"from app.agent.orchestrator.agent import orchestrator; print\\('ok'\\)\" 2>&1)",
-      "Bash(PYTHONPATH=. uv run python -c \":*)"
+      "Bash(PYTHONPATH=. uv run python -c \":*)",
+      "Bash(set -a)",
+      "Bash(source .env)",
+      "Bash(set +a)",
+      "Bash(cp /mnt/user-data/uploads/release_vesting_user_guide.pdf C:/Users/vijay/PycharmProjects/epm-chatbot/app/agent/manager/sub_agent/user_guide_agent/docs/)",
+      "Bash(cp /mnt/user-data/uploads/participant_grant_user_guide.pdf C:/Users/vijay/PycharmProjects/epm-chatbot/app/agent/manager/sub_agent/user_guide_agent/docs/)",
+      "Read(//c/Users/vijay/Downloads/**)",
+      "Read(//c/Users/vijay/**)",
+      "Bash(cp \"C:/Users/vijay/Downloads/release_vesting_user_guide.pdf\" \"C:/Users/vijay/PycharmProjects/epm-chatbot/app/agent/manager/sub_agent/user_guide_agent/docs/\")",
+      "Bash(cp \"C:/Users/vijay/Downloads/participant_grant_user_guide.pdf\" \"C:/Users/vijay/PycharmProjects/epm-chatbot/app/agent/manager/sub_agent/user_guide_agent/docs/\")"
     ]
   }
 }

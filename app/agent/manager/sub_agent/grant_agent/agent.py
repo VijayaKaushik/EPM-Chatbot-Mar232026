@@ -1,8 +1,22 @@
+import json
 import pathlib
+from typing import Optional
 
 from google.adk.agents import LlmAgent
+from google.adk.agents.callback_context import CallbackContext
 from google.adk.skills import load_skill_from_dir
 from google.adk.tools import skill_toolset
+from google.adk.tools.base_tool import BaseTool
+from google.adk.tools.tool_context import ToolContext
+
+
+def _log_tool_call(tool: BaseTool, args: dict, tool_context: ToolContext) -> Optional[dict]:
+    print(f"\n[TOOL] {tool_context.agent_name} -> {tool.name}({json.dumps(args, default=str)})")
+    return None
+
+
+def _log_agent_start(callback_context: CallbackContext) -> None:
+    print(f"\n[AGENT] {callback_context.agent_name} activated")
 
 from .tool import (
     load_grants,
@@ -52,6 +66,14 @@ grant_agent = LlmAgent(
     - Use get_grant_details only when a specific grant_id is provided
     - Use get_grants_by_employee_ids when orchestrator passes employee_ids
 
+    WHEN RECEIVING IDS FROM ORCHESTRATOR:
+    - If request contains employee_ids -> use query_grants
+      with those employee_ids as filter
+    - If request contains grant_ids -> use query_grants
+      with those grant_ids as filter
+    - Always decide internally which tool to use
+    - Never expect orchestrator to specify tools
+
     COMMUNICATION:
     - Professional and clear
     - Always show total counts alongside results
@@ -65,6 +87,8 @@ grant_agent = LlmAgent(
         get_grants_by_employee_ids,
         my_skill_toolset,
     ],
+    before_tool_callback=_log_tool_call,
+    before_agent_callback=_log_agent_start,
 )
 
 root_agent = grant_agent
