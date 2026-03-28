@@ -62,7 +62,13 @@ Each sub-agent has: `agent.py` (LlmAgent definition), `tool.py` (all tools in on
 - `analyze_release_data` uses PandasAI with a Faker-generated 100-row DataFrame (seeded, deterministic)
 
 
-
+## Git Rules (Claude Code must follow strictly)
+- NEVER run `git add`, `git commit`, or `git push` autonomously
+- NEVER create branches without explicit user instruction
+- NEVER stage or commit files without being explicitly asked
+- Git operations are always done by the user manually
+- Claude Code may suggest commit messages but never executes them
+- 
 ## progress.md (Required)
 
 After every completed task, append an entry to `progress.md` (project root, committed to git):

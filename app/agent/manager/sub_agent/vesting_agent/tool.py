@@ -121,7 +121,7 @@ def _safe_records(df: pd.DataFrame) -> List[Dict]:
         })
     return rows
 
-VESTING_DATA_DIR = pathlib.Path(__file__).parent / "vesting_data"
+VESTING_DATA_DIR = pathlib.Path(__file__).parent / "vesting_data" / "vesting_details"
 TAX_DATA_DIR = pathlib.Path(__file__).parent / "tax_data"
 
 VESTING_FIELDS = [
@@ -297,11 +297,16 @@ def get_vesting_details(vesting_date: str, tool_context: ToolContext) -> Dict:
     df = pd.read_csv(csv_path, dtype={"employee_id": str})
     participants: List[Dict] = _safe_records(df)
 
+    # Write employee_ids to state so orchestrator can pick them up reliably
+    employee_ids = [p["employee_id"] for p in participants]
+    tool_context.state["last_vesting_employee_ids"] = employee_ids
+
     return {
         "status": "success",
         "vesting_date": vesting_date,
         "token_id": token_id,
-        #"participants": participants,
+        "employee_ids": employee_ids,
+        "participant_count": len(participants),
         "message": f"Retrieved {len(participants)} participant records for {vesting_date}",
     }
 

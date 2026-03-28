@@ -1,0 +1,240 @@
+{
+  "domain": "release",
+  "subdomain": "simulation",
+  "intent": "simulate_next_release"
+}
+
+
+Great — this is exactly the right way to design a strong orchestrator: **start with the universe of questions → derive taxonomy → then routing logic**.
+
+I’ll first structure the **space (taxonomy)** so your 100 questions are not random but *strategically distributed*. Then I’ll give you a **clean, diverse set of 100 questions** that will stress-test your system.
+
+---
+
+# 🧠 1. Taxonomy (Foundation for Orchestrator)
+
+Think of this as **3 dimensions + 2 cross-cutting layers**:
+
+## 🔷 A. Core Data Domains (Slow-changing dimensions)
+
+1. **Client / Plan Level**
+2. **Participant Level**
+3. **Grant / Award Level**
+
+## 🔷 B. Event & Lifecycle Domains (Dynamic)
+
+4. **Release / Vesting Management**
+5. **Post-Vesting Transactions**
+
+## 🔷 C. Query Direction (Critical for orchestration)
+
+6. **Top-Down (Filter → Drill)**
+7. **Bottom-Up (Event → Enrich with attributes)**
+
+## 🔷 D. Meta Layers
+
+8. **User Guidance (How to use system)**
+9. **Domain Knowledge (Conceptual / Financial understanding)**
+
+---
+
+# 🧩 2. The 100 Questions (Structured by Category)
+
+This is designed to:
+
+* Train your orchestrator
+* Help define agent boundaries
+* Identify required filters + joins
+
+---
+
+## 🟦 A. Client / Plan Level (10)
+
+1. Show all active equity plans for this client
+2. What is the total pool size for plan ABC?
+3. Which plans are expiring this year?
+4. Show plans with remaining shares below 10%
+5. What is the total granted vs available shares?
+6. Which plan has the highest utilization?
+7. Show plan details for ESOP 2022
+8. How many participants are enrolled per plan?
+9. Which plans allow early exercise?
+10. Show plans by geography
+
+---
+
+## 🟩 B. Participant Level (15)
+
+11. List all participants in the US
+12. Show participants who have not completed KYC
+13. How many active participants are there?
+14. Show participants by department
+15. List terminated participants with unvested grants
+16. Show participants with grants above $100K
+17. Which participants joined in last 6 months?
+18. Show participants with multiple grants
+19. List participants eligible for next release
+20. Show demographic breakdown (age/gender/location)
+21. Which participants have exercised options?
+22. Show participants with expired grants
+23. List participants by tax jurisdiction
+24. Show participants with pending transactions
+25. Who are the top 10 holders by value?
+
+---
+
+## 🟨 C. Grant / Award Level (20)
+
+26. Show all grants of type RSU
+27. List grants issued in 2024
+28. Show grants with cliff vesting
+29. Which grants are fully vested?
+30. Show grants with performance conditions
+31. List grants expiring in next 90 days
+32. Show average grant size by role
+33. Which grants are underwater?
+34. Show grants with missing vesting schedule
+35. List grants with accelerated vesting
+36. Show total granted value by grant type
+37. Which grants are partially vested?
+38. Show grant distribution across departments
+39. List grants with custom vesting rules
+40. Show grants linked to a specific release date
+41. Which grants have been cancelled?
+42. Show grants by currency
+43. List grants with highest volatility impact
+44. Show grants with manual overrides
+45. Which grants are pending approval?
+
+---
+
+## 🟥 D. Release / Vesting Management (15)
+
+46. What is the next vesting date?
+47. Simulate the next release
+48. Show all releases scheduled this quarter
+49. Which participants are included in next release?
+50. Show release summary for March 2026
+51. How many shares will vest in next release?
+52. Show failed releases and reasons
+53. Which releases are pending approval?
+54. Show release history for a participant
+55. What is total vested value this year?
+56. Show releases by plan
+57. Which grants are vesting today?
+58. Show releases with tax withholding applied
+59. List participants excluded from release
+60. Compare last 2 releases
+
+---
+
+## 🟧 E. Post-Vesting Transactions (15)
+
+61. Show all exercised options this month
+62. List sell transactions after vesting
+63. Show participants who sold immediately after vesting
+64. What is total tax withheld this quarter?
+65. Show transaction history for a participant
+66. List failed transactions
+67. Show net shares after tax deduction
+68. Which participants have not exercised vested options?
+69. Show transaction volume by region
+70. List participants with pending settlements
+71. Show gains/losses from transactions
+72. Which transactions were manually adjusted?
+73. Show transactions linked to a release
+74. List high-value transactions (> $1M)
+75. Show transaction trends over time
+
+---
+
+## 🟪 F. Top-Down Slice & Dice (10)
+
+76. Show participants with RSU grants in US
+77. List participants with grants > $50K and pending KYC
+78. Show grants by department and location
+79. Filter participants by grant type and vesting status
+80. Show participants eligible for release with incomplete profiles
+81. List grants by performance rating
+82. Show participants with expiring grants in next 30 days
+83. Filter participants with high-value unvested equity
+84. Show participants by tenure and grant size
+85. List participants with multiple grant types
+
+---
+
+## 🟫 G. Bottom-Up (Release → Enrichment) (5)
+
+86. For next release, show participant demographics
+87. For this release, show grant types involved
+88. Enrich release with participant location and role
+89. Show tax impact by participant for this release
+90. For last release, show department-wise distribution
+
+---
+
+## ⬜ H. User Guidance (5)
+
+91. How do I simulate a release?
+92. How do I filter participants by grant type?
+93. How do I download a report?
+94. How do I approve a release?
+95. Where can I see transaction history?
+
+---
+
+## ⬛ I. Domain Knowledge (5)
+
+96. What is vesting?
+97. What is the difference between RSU and stock options?
+98. What is a cliff in vesting?
+99. How is tax calculated on equity awards?
+100. What happens when a grant expires?
+
+---
+
+# 🚀 Why this is powerful (for your orchestrator)
+
+This gives you:
+
+### ✅ Clear routing signals
+
+* “show”, “list” → retrieval
+* “simulate” → action agent
+* “how to” → guidance agent
+* “what is” → knowledge agent
+
+### ✅ Multi-hop scenarios
+
+* Participant ↔ Grant ↔ Release joins
+* Perfect for your **agent chaining**
+
+### ✅ Filter + aggregation patterns
+
+* Count, group by, filter, enrich
+
+---
+
+# 💡 Next Step (highly recommended)
+
+Now that we have this, the next logical step is:
+
+👉 Convert this into a **3-level taxonomy JSON for orchestration**
+
+Example:
+
+```json
+{
+  "domain": "release",
+  "subdomain": "simulation",
+  "intent": "simulate_next_release"
+}
+```
+
+---
+
+If you want, I can next:
+
+* Turn these 100 questions into **labeled training data for your orchestrator**
+* Or design **agent boundaries + tool mapping**
+* Or build **few-shot prompts (this is where accuracy jumps massively)**
