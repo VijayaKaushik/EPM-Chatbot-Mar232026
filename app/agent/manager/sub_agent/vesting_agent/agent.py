@@ -1,8 +1,22 @@
+import json
 import pathlib
+from typing import Optional
 
 from google.adk.agents import LlmAgent
+from google.adk.agents.callback_context import CallbackContext
 from google.adk.skills import load_skill_from_dir
 from google.adk.tools import skill_toolset
+from google.adk.tools.base_tool import BaseTool
+from google.adk.tools.tool_context import ToolContext
+
+
+def _log_tool_call(tool: BaseTool, args: dict, tool_context: ToolContext) -> Optional[dict]:
+    print(f"\n[TOOL] {tool_context.agent_name} -> {tool.name}({json.dumps(args, default=str)})")
+    return None
+
+
+def _log_agent_start(callback_context: CallbackContext) -> None:
+    print(f"\n[AGENT] {callback_context.agent_name} activated")
 
 from .tool import (
     get_vesting_dates,
@@ -94,6 +108,8 @@ COMMUNICATION:
         create_batch,
         my_skill_toolset,
     ],
+    before_tool_callback=_log_tool_call,
+    before_agent_callback=_log_agent_start,
 )
 
 # Required for adk web

@@ -12,7 +12,12 @@
       "Bash(python3 -c \":*)",
       "Bash(python3:*)",
       "Bash(/tmp/run_vesting_query.py:*)",
-      "Bash(ls /mnt/c/Users/vijay/PycharmProjects/epm-chatbot/.env*)"
+      "Bash(ls /mnt/c/Users/vijay/PycharmProjects/epm-chatbot/.env*)",
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(timeout 30 uv run python -c 'print\\(\"\"hello\"\"\\)')",
+      "Bash(printenv GOOGLE_API_KEY)",
+      "Bash(PYTHONPATH=. uv run python -c \"from app.agent.orchestrator.agent import orchestrator; print\\('ok'\\)\" 2>&1)",
+      "Bash(PYTHONPATH=. uv run python -c \":*)"
     ]
   }
 }

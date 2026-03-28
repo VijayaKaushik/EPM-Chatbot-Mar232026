@@ -77,11 +77,16 @@
       "Bash(git push *)",
       "Bash(git pull)"
     ],
-    "deny": [
+     "deny": [
       "Bash(pip install *)",
       "Bash(pip uninstall *)",
-      "Bash(rm -rf /)"
-    ]
+      "Bash(rm -rf /)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(git checkout -b *)",
+      "Bash(git branch *)",
+      "Bash(git add *)"
+  ]
   },
   "env": {
     "UV_PROJECT_ENVIRONMENT": ".venv",
