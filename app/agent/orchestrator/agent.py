@@ -3,7 +3,6 @@ from typing import List, Optional
 
 from google.adk.agents import LlmAgent
 from google.adk.agents.callback_context import CallbackContext
-from google.adk.tools import AgentTool
 from google.adk.tools.base_tool import BaseTool
 from google.adk.tools.tool_context import ToolContext
 
@@ -16,11 +15,15 @@ def _log_tool_call(tool: BaseTool, args: dict, tool_context: ToolContext) -> Opt
 def _log_agent_start(callback_context: CallbackContext) -> None:
     print(f"\n[AGENT] {callback_context.agent_name} activated")
 
+
+from app.agent.manager.sub_agent.client_ops_agent.agent import client_ops_agent
 from app.agent.manager.sub_agent.grant_agent.agent import grant_agent
 from app.agent.manager.sub_agent.participant_agent.agent import participant_agent
+from app.agent.manager.sub_agent.user_guide_agent.agent import user_guide_agent
 from app.agent.manager.sub_agent.vesting_agent.agent import vesting_agent
 from .context_registry import ContextRegistry
 from .planner import Planner
+from .rag_registry import is_rag_agent
 
 planner = Planner()
 registry = ContextRegistry()
@@ -54,7 +57,6 @@ def route_query(query: str, tool_context: ToolContext) -> dict:
         operation = plan.get("operation", "filter")
 
         if operation == "intersect":
-            # Get employee_ids from all turns and intersect
             all_ids = [
                 set(turn.get("employee_ids", []))
                 for turn in context.values()
@@ -90,7 +92,58 @@ def route_query(query: str, tool_context: ToolContext) -> dict:
             "message":      "Use existing context to answer this query",
         }
 
-    # Step 4 — record routing plan, let sub_agent handle the rest
+    split_type = plan.get("split_type", "operational")
+
+    print(f"🔀 SPLIT_TYPE: {split_type} | ROUTE: {plan['route']}")
+
+    # SINGLE GENERIC RAG HANDLER — works for all RAG agents
+    if split_type == "rag":
+        rag_agent_name = plan["route"]
+        print(f"📖 RAG → {rag_agent_name} | query: {query}")
+        registry.write_turn(
+            tool_context=tool_context,
+            turn_index=turn_index,
+            agent_name=rag_agent_name,
+            intent=plan["intent"],
+            summary={"plan": plan},
+        )
+        return {
+            "status":     "success",
+            "route":      rag_agent_name,
+            "split_type": "rag",
+            "intent":     plan["intent"],
+            "rag_query":  plan.get("rag_query") or query,
+            "message":    f"Routing to {rag_agent_name} for documentation search",
+        }
+
+    # SINGLE GENERIC COMBO HANDLER
+    if split_type == "combo":
+        rag_agent_name = plan.get("rag_agent", "user_guide_agent")
+        print(f"🔀 COMBO → rag_agent: {rag_agent_name} | rag_query: {plan.get('rag_query')} | operational_query: {plan.get('operational_query')}")
+        registry.write_turn(
+            tool_context=tool_context,
+            turn_index=turn_index,
+            agent_name="combo",
+            intent=plan["intent"],
+            summary={
+                "rag_agent":         rag_agent_name,
+                "rag_query":         plan.get("rag_query"),
+                "operational_query": plan.get("operational_query"),
+            },
+        )
+        return {
+            "status":            "success",
+            "route":             "combo",
+            "split_type":        "combo",
+            "intent":            plan["intent"],
+            "rag_agent":         rag_agent_name,
+            "rag_query":         plan.get("rag_query") or query,
+            "operational_query": plan.get("operational_query") or query,
+            "message":           f"Combo — {rag_agent_name} + operational agent",
+        }
+
+    # OPERATIONAL: record routing plan, let sub_agent handle the rest
+    print(f"⚙️  OPERATIONAL → {plan['route']} | intent: {plan['intent']}")
     registry.write_turn(
         tool_context=tool_context,
         turn_index=turn_index,
@@ -99,7 +152,6 @@ def route_query(query: str, tool_context: ToolContext) -> dict:
         summary={"plan": plan},
     )
 
-    # Surface any stored employee_ids so orchestrator can pass them to participant_agent
     context_employee_ids = registry.get_latest_employee_ids(tool_context) or \
                            tool_context.state.get("last_vesting_employee_ids", [])
 
@@ -107,7 +159,8 @@ def route_query(query: str, tool_context: ToolContext) -> dict:
         "status":               "success",
         "route":                plan["route"],
         "intent":               plan["intent"],
-        "cross_agent":          plan["cross_agent"],
+        "split_type":           "operational",
+        "cross_agent":          plan.get("cross_agent", False),
         "join_key":             plan.get("join_key"),
         "join_field":           plan.get("join_field"),
         "requires_context":     plan.get("requires_context", False),
@@ -144,7 +197,6 @@ def update_context(
     """
     turn_index = registry.get_turn_index(tool_context)
 
-    # Fall back to state-stored ids if LLM passed an empty list
     resolved_ids = employee_ids or tool_context.state.get("last_vesting_employee_ids", [])
 
     registry.write_turn(
@@ -169,6 +221,41 @@ orchestrator = LlmAgent(
     You route user queries to the correct specialist agent and
     maintain conversation context across turns.
 
+    INTENT SPLITTING — CHECK SPLIT_TYPE FIRST:
+    route_query returns split_type. Act on it strictly:
+
+    split_type = "rag"
+    → route field contains the specific RAG agent name
+    → delegate ONLY to that agent
+    → do NOT call any data agent
+    → present response directly
+    → Examples of RAG agents: user_guide_agent, client_ops_agent
+      (more may be added — always use route field, never hardcode)
+
+    split_type = "operational"
+    → use existing routing rules
+    → delegate to vesting/participant/grant agent
+    → do NOT call any RAG agent
+
+    split_type = "combo"
+    → route_query returns: rag_agent, rag_query, operational_query
+    → Step 1: delegate rag_query to the rag_agent in the response
+    → Step 2: delegate operational_query to correct data agent
+               using existing operational routing rules
+    → Present BOTH with clear section labels:
+
+      ## [Guide Answer]
+      [RAG agent response]
+
+      ---
+
+      ## [Data Answer]
+      [data agent response]
+
+    CRITICAL: For RAG routing — ALWAYS use the route field from
+    route_query. NEVER hardcode agent names in your reasoning.
+    New RAG agents may be added without changing your instruction.
+
     ## Your Workflow — Follow This Strictly
 
     STEP 1: Always call route_query(query) first for every user message.
@@ -180,6 +267,11 @@ orchestrator = LlmAgent(
       -> Answer is already in session context
       -> Present the result from route_query directly
       -> Do NOT call any sub-agent
+
+      route = [any RAG agent]  (split_type = "rag")
+      -> Delegate to that agent with the rag_query from route_query
+      -> Present the documentation answer with source and next action
+      -> Do NOT call update_context
 
       route = "vesting_agent"
       -> Delegate to vesting_agent with the user's query
@@ -203,10 +295,16 @@ orchestrator = LlmAgent(
       -> When grant_agent completes, call update_context
          with the employee_ids from its response
 
-      route = "both"
+      route = "combo"  (split_type = "combo")
+      -> Step 1: Delegate rag_query to rag_agent from route_query response
+      -> Step 2: Delegate operational_query to the appropriate data agent
+      -> Present both answers with section labels
+      -> Call update_context after the data agent completes
+
+      route = "both"  (split_type = "operational")
       -> Step 1: Delegate to vesting_agent first
       -> Extract employee_ids from vesting_agent response
-      -> Step 2: Delegate to participant_agent
+      -> Step 2: Delegate to participant_agent or grant_agent
          passing employee_ids as filter context
       -> JOIN results on employee_id (set intersection on keys only)
       -> Call update_context with merged employee_ids
@@ -216,7 +314,7 @@ orchestrator = LlmAgent(
 
     ## Critical Rules
     - Always call route_query FIRST before anything else
-    - Never skip update_context after an agent completes
+    - Never skip update_context after a data agent completes
     - Never pass full records between agents — keys only
     - Never answer vesting questions yourself — delegate to vesting_agent
     - Never answer participant questions yourself — delegate to participant_agent
@@ -224,36 +322,14 @@ orchestrator = LlmAgent(
     - For cross-agent queries, vesting_agent always runs first
     - Context registry is your memory — read it via route_query
 
-    ## What You Know About Your Agents
+    ## AGENT CAPABILITIES SUMMARY
 
-    vesting_agent handles:
-      Vesting dates, release schedules, participant details
-      within a release, department/country/email breakdowns,
-      employee status, officer status, grant type, FMV, tax,
-      batch creation, release workflow end to end
-      Columns: employee_id, employee_name, email, department,
-      employee_status, officer_status, grant_id, grant_type,
-      country, tax_method, shares_released, fmv_at_release,
-      net_value_delivered, batch_id, tax_amount, release_status
-
-    participant_agent handles ONLY compliance/profile fields:
-      kyc_status, insider_status, blackout_status,
-      current_address, office_address, w8_w9_status,
-      withholding_rate, ach_status, account_info,
-      grant_eligible, broker_code
-
-    grant_agent handles:
-      All questions about grants, plans, grant types, unvested shares,
-      vesting schedules, performance conditions, grant status.
-      Links to participants and vesting data via employee_id and grant_id.
-      Uses ADK artifacts for session-persistent data storage.
-
-      Grant data fields:
-      grant_id, employee_id, employee_name, plan_id, plan_name,
-      grant_type, grant_date, expiry_date, total_shares_granted,
-      vested_shares, unvested_shares, percentage_vested,
-      grant_value_at_grant_date, vesting_schedule, cliff_months,
-      performance_conditions, grant_status
+    user_guide_agent  → generic how-to, concepts, app navigation
+    client_ops_agent  → client contacts, SLAs, client policies
+                        client_id read from session state automatically
+    vesting_agent     → vesting data, release workflow, batch creation
+    participant_agent → KYC, insider, blackout, address, account info
+    grant_agent       → grants, plans, unvested shares, grant analysis
 
     ## STRICT ROUTING ENFORCEMENT
     - When route_query returns route = "grant_agent" you MUST
@@ -271,13 +347,9 @@ orchestrator = LlmAgent(
       pass: 'show [requested data] for these grant_ids: [ids]'
     - The receiving agent decides how to answer internally
     """,
-    tools=[
-        route_query,
-        update_context,
-        AgentTool(agent=vesting_agent),
-        AgentTool(agent=participant_agent),
-        AgentTool(agent=grant_agent),
-    ],
+    tools=[route_query, update_context],
+    sub_agents=[vesting_agent, participant_agent, grant_agent,
+                user_guide_agent, client_ops_agent],
     before_tool_callback=_log_tool_call,
     before_agent_callback=_log_agent_start,
 )
