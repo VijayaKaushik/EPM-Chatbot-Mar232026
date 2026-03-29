@@ -99,6 +99,24 @@ Examples:
 
 ---
 
+## COMMUNICATION INTENT RULE — applies before all other rules
+
+When query involves drafting emails, notifications, letters,
+summaries or any communication TO the client or FROM EPM:
+  → ALWAYS classify as combo regardless of other signals
+  → rag_agent: "client_ops_agent"
+    (EPM and CRM contact details come from client docs)
+  → rag_query: ask for EPM lead and contact details
+  → operational_query: the underlying data needed
+
+Communication trigger keywords:
+  "draft", "email", "send", "notify", "communicate",
+  "letter", "notification", "summary for client",
+  "from EPM", "to client", "contact client",
+  "prepare communication", "write to"
+
+---
+
 ## Context Only (no agent call needed)
 
   route: "context_only"
@@ -179,6 +197,46 @@ Response: {{"split_type": "combo", "route": "combo",
  "context_key": null, "rag_agent": "client_ops_agent",
  "rag_query": "What is the SLA for critical issues?",
  "operational_query": "list terminated participants"}}
+
+Query: "Draft an email giving details of next vesting, email will be sent by EPM"
+Response: {{"split_type": "combo", "route": "combo",
+ "intent": "draft_vesting_email",
+ "requires_context": false, "cross_agent": false,
+ "step_1": null, "step_2": null, "join_key": null,
+ "join_field": null, "operation": null, "context_key": null,
+ "rag_agent": "client_ops_agent",
+ "rag_query": "Who is the EPM lead and what are their contact details?",
+ "operational_query": "get details of next vesting date and participant summary"}}
+
+Query: "Send a notification to client about upcoming release"
+Response: {{"split_type": "combo", "route": "combo",
+ "intent": "draft_release_notification",
+ "requires_context": false, "cross_agent": false,
+ "step_1": null, "step_2": null, "join_key": null,
+ "join_field": null, "operation": null, "context_key": null,
+ "rag_agent": "client_ops_agent",
+ "rag_query": "Who are the CRM and EPM contacts for this client?",
+ "operational_query": "get details of next vesting release"}}
+
+Query: "Prepare a release summary email for the client"
+Response: {{"split_type": "combo", "route": "combo",
+ "intent": "draft_release_summary_email",
+ "requires_context": false, "cross_agent": false,
+ "step_1": null, "step_2": null, "join_key": null,
+ "join_field": null, "operation": null, "context_key": null,
+ "rag_agent": "client_ops_agent",
+ "rag_query": "Who is the EPM lead and CRM contact for this client?",
+ "operational_query": "get release summary for next vesting"}}
+
+Query: "Notify CRM contact about batch approval completion"
+Response: {{"split_type": "combo", "route": "combo",
+ "intent": "draft_batch_notification",
+ "requires_context": false, "cross_agent": false,
+ "step_1": null, "step_2": null, "join_key": null,
+ "join_field": null, "operation": null, "context_key": null,
+ "rag_agent": "client_ops_agent",
+ "rag_query": "Who is the CRM contact for this client?",
+ "operational_query": "get batch approval details"}}
 
 Query: "Are there common participants across those vestings?"
 Response: {{"split_type": "operational", "route": "context_only",

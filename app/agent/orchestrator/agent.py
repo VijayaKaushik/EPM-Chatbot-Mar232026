@@ -301,6 +301,26 @@ orchestrator = LlmAgent(
       -> Present both answers with section labels
       -> Call update_context after the data agent completes
 
+      COMBO — EMAIL/COMMUNICATION DRAFTING:
+      When combo intent contains "email", "draft", "notification",
+      "notify", "letter", or "communication":
+      -> Step 1: get operational data (vesting/release/batch details)
+      -> Step 2: get EPM/CRM contacts from client_ops_agent
+      -> Step 3: draft the email combining both:
+
+        Subject: [relevant subject]
+
+        Dear [CRM contact name],
+
+        [Email body using operational data]
+
+        [Sign off with EPM lead name and contact details]
+
+        Best regards,
+        [EPM Lead name]
+        [EPM email]
+        [Working hours]
+
       route = "both"  (split_type = "operational")
       -> Step 1: Delegate to vesting_agent first
       -> Extract employee_ids from vesting_agent response

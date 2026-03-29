@@ -668,3 +668,20 @@ The RAG registry (`rag_registry.py`) is the single source of truth for which age
 **Context for future contributors**
 To add a new RAG agent (e.g., `release_notes_agent`): (1) add entry to `RAG_AGENTS` in `rag_registry.py`, (2) create the agent under `sub_agent/`, (3) add it to `sub_agents=[...]` in `agent.py`. Zero changes to planner.py, route_query, or orchestrator instruction. The planner prompt auto-updates at next import. Client isolation for client_ops_agent is handled entirely in tool.py via `client_id` from session state — orchestrator has no client-specific logic.
 ---
+---
+### [2026-03-29 11:00 EST] Planner: communication intent rule for implicit combos
+
+**What changed**
+- Modified `app/agent/orchestrator/planner.py` — added COMMUNICATION INTENT RULE section after Combo Queries; added 4 new few-shot examples covering draft/email/notify/notification queries all routing to combo+client_ops_agent
+- Modified `app/agent/orchestrator/agent.py` — added COMBO EMAIL/COMMUNICATION DRAFTING block to orchestrator instruction with email template structure
+
+**Logic & data flow**
+The planner previously only caught explicit combos with clear "and" structure ("What is X AND who has Y?"). Implicit combos like "Draft an email from EPM with vesting details" were classified as operational because the RAG signal (EPM contacts) was buried. The fix adds a COMMUNICATION INTENT RULE that pre-empts all other rules when draft/email/send/notify keywords appear — forcing combo classification with client_ops_agent as the rag_agent. The orchestrator instruction now has an email template it follows when the combo intent is communication-related.
+
+**Assumptions**
+- All communication queries need client_ops_agent (EPM/CRM contacts) — this holds as long as every email needs a named sender/recipient from client docs
+- "Show next vesting date" correctly stays operational (control case verified)
+
+**Context for future contributors**
+The COMMUNICATION INTENT RULE sits above the generic combo definition in the prompt so Gemini sees it first. If a new communication type appears that doesn't fit client_ops_agent, add a separate rule with a different rag_agent. Trigger keywords are explicit in the prompt — extend that list if new phrasings are missed.
+---
