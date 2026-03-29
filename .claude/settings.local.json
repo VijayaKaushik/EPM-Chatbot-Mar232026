@@ -26,7 +26,9 @@
       "Read(//c/Users/vijay/Downloads/**)",
       "Read(//c/Users/vijay/**)",
       "Bash(cp \"C:/Users/vijay/Downloads/release_vesting_user_guide.pdf\" \"C:/Users/vijay/PycharmProjects/epm-chatbot/app/agent/manager/sub_agent/user_guide_agent/docs/\")",
-      "Bash(cp \"C:/Users/vijay/Downloads/participant_grant_user_guide.pdf\" \"C:/Users/vijay/PycharmProjects/epm-chatbot/app/agent/manager/sub_agent/user_guide_agent/docs/\")"
+      "Bash(cp \"C:/Users/vijay/Downloads/participant_grant_user_guide.pdf\" \"C:/Users/vijay/PycharmProjects/epm-chatbot/app/agent/manager/sub_agent/user_guide_agent/docs/\")",
+      "Bash(\"C:/Users/vijay/PycharmProjects/epm-chatbot/progress.md\":*)",
+      "Bash(PYTHONPATH=. PYTHONIOENCODING=utf-8 uv run python -c \":*)"
     ]
   }
 }

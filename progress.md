@@ -608,3 +608,63 @@
 - `build_index` is idempotent — safe to call multiple times; returns early from artifact if already built
 - To add more PDFs: drop them in `docs/` and call `build_index` again (or clear the artifact to force rebuild)
 ---
+### [2026-03-28 12:00 EST] Intent splitting + user_guide_agent wired into orchestrator
+
+**What changed**
+- Modified `app/agent/orchestrator/planner.py` — added Step 1 intent classification (rag/operational/combo) at top of ROUTING_SYSTEM_PROMPT; added `user_guide_agent` section; added RULE 0/0b for RAG routing; updated output schema with `split_type`, `rag_query`, `operational_query` fields; added 6 new few-shot examples covering rag and combo queries
+- Modified `app/agent/orchestrator/agent.py` — imported `user_guide_agent`; added `AgentTool(agent=user_guide_agent)` to orchestrator tools; added split_type handling in `route_query` (rag → early return for user_guide_agent, combo → split return with both rag_query and operational_query, operational → existing path); updated orchestrator instruction with INTENT SPLITTING section and user_guide_agent description
+
+**Logic & data flow**
+Every query now goes through a two-stage classification: (1) planner assigns split_type (rag/operational/combo), (2) route_query dispatches accordingly. RAG queries return immediately with rag_query and skip data agents entirely. Combo queries carry both rag_query and operational_query so the orchestrator can call user_guide_agent first then the data agent. Operational queries follow the existing routing path unchanged.
+
+**Assumptions**
+- split_type defaults to "operational" if planner omits it (backward compatibility for old planner responses)
+- update_context is NOT called after user_guide_agent since it produces no employee_ids
+- For combo route="both", step_1 is always user_guide_agent and step_2 is the data agent
+
+**Context for future contributors**
+The split_type field in the planner response is the new gate: without it the orchestrator would route how-to questions to data agents. The rag path in route_query exits before the operational registry write so context_registry is not polluted with guide lookups. If you add more documentation topics to user_guide_agent, no orchestrator changes are needed — just drop PDFs in the docs/ folder and rebuild the FAISS index.
+---
+---
+### [2026-03-28 13:00 EST] client_ops_agent — client-scoped FAISS RAG agent
+
+**What changed**
+- Created `app/agent/manager/sub_agent/client_ops_agent/__init__.py`
+- Created `app/agent/manager/sub_agent/client_ops_agent/tool.py` — 3 async tools: `build_client_index`, `search_client_docs`, `list_client_topics`
+- Created `app/agent/manager/sub_agent/client_ops_agent/agent.py` — `client_ops_agent` LlmAgent with logging callbacks
+- Created `app/agent/manager/sub_agent/client_ops_agent/skills/agent_capabilities/SKILL.md`
+- Created `app/agent/manager/sub_agent/client_ops_agent/skills/client_ops_search/SKILL.md`
+- Added PDF: `app/agent/manager/sub_agent/client_ops_agent/docs/CLIENT-001/client_specific_guide_filled.pdf`
+
+**Logic & data flow**
+`client_id` is read from `tool_context.state` at the start of every tool call (default `CLIENT-001`). This drives two things: (1) which docs folder to read PDFs from (`docs/{client_id}/`) and (2) which artifact keys to use (`client_ops_index_{client_id}.pkl`, `client_ops_chunks_{client_id}.json`). The result is full FAISS index isolation per client — CLIENT-001 and CLIENT-002 never share vectors or chunks. The fallback chain is identical to user_guide_agent: try artifact first, fall back to disk rebuild if unavailable. Synthesis via Gemini produces ANSWER / SOURCE / NEXT ACTION format.
+
+**Assumptions**
+- `client_id` is set in session state by the caller (orchestrator or API layer) before this agent is invoked
+- Default `CLIENT-001` is safe for development/testing
+- One docs folder per client; multiple PDFs per folder are supported
+- FAISS artifact is rebuilt on disk fallback but save is best-effort (swallowed exceptions)
+- Windows console requires `PYTHONIOENCODING=utf-8` when running test scripts directly (emoji print statements)
+
+**Context for future contributors**
+To add a new client: create `docs/CLIENT-XXX/` folder, drop PDFs in, set `client_id=CLIENT-XXX` in session state. No code changes needed. Each client's index is independent — adding CLIENT-002 does not affect CLIENT-001's artifact. The agent is not yet wired into the orchestrator or manager; that is the next step. The PDF tested (`client_specific_guide_filled.pdf`) produced 5 chunks across 1 document.
+---
+---
+### [2026-03-29 10:00 EST] RAG registry + client_ops_agent wired into orchestrator
+
+**What changed**
+- Created `app/agent/orchestrator/rag_registry.py` — `RAG_AGENTS` dict with user_guide_agent and client_ops_agent entries; `get_rag_agent_names()`, `get_rag_routing_description()`, `is_rag_agent()` helpers
+- Rewrote `app/agent/orchestrator/planner.py` — `ROUTING_SYSTEM_PROMPT` is now an f-string built at import time from `get_rag_routing_description()` and `get_rag_agent_names()`; old hardcoded RAG section replaced by dynamic registry injection; all old few-shot examples replaced with full set covering rag/operational/combo/context_only; output schema now includes `split_type`, `rag_agent`, `rag_query`, `operational_query`
+- Rewrote `app/agent/orchestrator/agent.py` — imported `client_ops_agent` and `is_rag_agent`; replaced hardcoded rag/combo handlers with single generic RAG handler and single generic combo handler (both agent-name-agnostic); switched from `AgentTool` in tools to `sub_agents=[...]` on LlmAgent; updated orchestrator instruction with INTENT SPLITTING section referencing route field instead of hardcoded names; added client_ops_agent to AGENT CAPABILITIES SUMMARY
+
+**Logic & data flow**
+The RAG registry (`rag_registry.py`) is the single source of truth for which agents handle documentation queries. `get_rag_routing_description()` is called once at module import time and injected into the planner's system prompt via f-string — adding a new RAG agent requires only an entry in `RAG_AGENTS`, nothing else changes. The planner now returns `split_type` (rag/operational/combo) on every response, plus `rag_agent` for which specific RAG agent to call. `route_query` in agent.py has three generic dispatch branches: rag uses `plan["route"]` directly (never hardcoded), combo uses `plan["rag_agent"]` + `plan["operational_query"]`, operational follows existing rules. Sub-agents are now registered via `sub_agents=[...]` rather than `AgentTool` in tools.
+
+**Assumptions**
+- `ROUTING_SYSTEM_PROMPT` is computed once at import time — if RAG_AGENTS changes at runtime, planner must be reimported to pick up changes
+- Planner test confirmed all 8 classification cases correct (rag×4, operational×3, combo×2 — verified live against Gemini)
+- `is_rag_agent()` is imported but not yet used in route_query dispatch logic — reserved for future validation
+
+**Context for future contributors**
+To add a new RAG agent (e.g., `release_notes_agent`): (1) add entry to `RAG_AGENTS` in `rag_registry.py`, (2) create the agent under `sub_agent/`, (3) add it to `sub_agents=[...]` in `agent.py`. Zero changes to planner.py, route_query, or orchestrator instruction. The planner prompt auto-updates at next import. Client isolation for client_ops_agent is handled entirely in tool.py via `client_id` from session state — orchestrator has no client-specific logic.
+---

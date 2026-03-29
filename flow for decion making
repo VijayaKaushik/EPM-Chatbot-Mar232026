@@ -1,0 +1,552 @@
+Let me pick 5 questions that cover every routing pattern we've built:
+
+```
+Q1: "Show me the next 2 vesting dates"
+    → operational, single agent, fresh session
+
+Q2: "How many participants are in those vestings?"
+    → operational, reuses context from Q1
+
+Q3: "What is KYC and who has pending KYC?"
+    → combo, RAG + operational
+
+Q4: "Who is the EPM lead for this client?"
+    → rag_client, client_ops_agent
+
+Q5: "Show grants linked to those participants"
+    → operational, cross-agent, reuses context from Q2
+```
+
+---
+
+## Q1 — "Show me the next 2 vesting dates"
+
+### Step 1 — Orchestrator receives query
+```
+User message arrives at orchestrator
+Session state: {} (fresh session, nothing yet)
+Orchestrator calls route_query("Show me the next 2 vesting dates")
+```
+
+### Step 2 — route_query runs
+```python
+# Reads context registry
+context = registry.read_registry(tool_context)
+# → {} empty, fresh session
+
+turn_index = registry.get_turn_index(tool_context)
+# → 0
+```
+
+### Step 3 — Planner classifies
+```python
+plan = planner.classify(
+    query="Show me the next 2 vesting dates",
+    context_registry={}
+)
+```
+
+Planner sees:
+```
+- "Show me" → data intent → operational
+- "vesting dates" → vesting data
+- context_registry empty → no reuse possible
+```
+
+Planner returns:
+```json
+{
+  "split_type": "operational",
+  "route": "vesting_agent",
+  "intent": "get_vesting_dates",
+  "requires_context": false,
+  "cross_agent": false,
+  "rag_agent": null,
+  "rag_query": null,
+  "operational_query": null
+}
+```
+
+Terminal prints:
+```
+📥 ROUTE QUERY CALLED
+📝 Query: Show me the next 2 vesting dates
+📚 Context registry: {}
+🔍 PLANNER RESULT: {"split_type": "operational", "route": "vesting_agent"...}
+```
+
+### Step 4 — route_query returns to orchestrator
+```json
+{
+  "status": "success",
+  "route": "vesting_agent",
+  "split_type": "operational",
+  "intent": "get_vesting_dates",
+  "message": "Routing to vesting_agent"
+}
+```
+
+### Step 5 — Orchestrator delegates to vesting_agent
+```
+orchestrator → vesting_agent(
+  "Show me the next 2 vesting dates"
+)
+```
+
+### Step 6 — vesting_agent handles it
+```
+vesting_agent calls get_vesting_dates(count=2)
+→ returns: ["2026-05-15", "2026-06-15"]
+→ vesting_agent responds to orchestrator with result
+```
+
+### Step 7 — Orchestrator calls update_context
+```python
+update_context(
+    agent_name="vesting_agent",
+    employee_ids=[],          # no employees yet, just dates
+    vesting_date="2026-05-15",
+    summary={"vesting_dates": ["2026-05-15", "2026-06-15"]}
+)
+```
+
+Context registry now:
+```json
+{
+  "turn_0": {
+    "agent": "vesting_agent",
+    "intent": "get_vesting_dates",
+    "employee_ids": [],
+    "vesting_date": "2026-05-15",
+    "summary": {"vesting_dates": ["2026-05-15", "2026-06-15"]}
+  }
+}
+```
+
+### User sees:
+```
+The next 2 vesting dates are:
+1. May 15, 2026
+2. June 15, 2026
+```
+
+---
+
+## Q2 — "How many participants are in those vestings?"
+
+### Step 1 — route_query runs
+```python
+context = registry.read_registry(tool_context)
+# → turn_0 exists with vesting_dates
+
+turn_index = 1
+```
+
+### Step 2 — Planner classifies
+```python
+plan = planner.classify(
+    query="How many participants are in those vestings?",
+    context_registry={"turn_0": {...vesting_dates...}}
+)
+```
+
+Planner sees:
+```
+- "those vestings" → references turn_0 vesting_dates
+- "how many participants" → data query
+- vesting_dates available in context → use them
+```
+
+Planner returns:
+```json
+{
+  "split_type": "operational",
+  "route": "vesting_agent",
+  "intent": "get_participant_count_for_dates",
+  "requires_context": true,
+  "cross_agent": false
+}
+```
+
+### Step 3 — Orchestrator delegates to vesting_agent
+```
+orchestrator → vesting_agent(
+  "How many participants are in vesting dates
+   2026-05-15 and 2026-06-15?"
+)
+```
+Note: orchestrator enriches the query with dates from context.
+
+### Step 4 — vesting_agent handles it
+```
+vesting_agent calls get_vesting_details("2026-05-15")
+  → 13 participants, employee_ids: [A, B, C...]
+
+vesting_agent calls get_vesting_details("2026-06-15")
+  → 9 participants, employee_ids: [B, D, E...]
+```
+
+### Step 5 — update_context
+```python
+update_context(
+    agent_name="vesting_agent",
+    employee_ids=["A","B","C","D","E"...],  # combined unique ids
+    summary={
+        "2026-05-15": {"count": 13, "ids": [...]},
+        "2026-06-15": {"count": 9,  "ids": [...]}
+    }
+)
+```
+
+Context registry now:
+```json
+{
+  "turn_0": {...vesting_dates...},
+  "turn_1": {
+    "agent": "vesting_agent",
+    "intent": "get_participant_count_for_dates",
+    "employee_ids": ["A","B","C","D","E"...],
+    "summary": {
+      "2026-05-15": {"count": 13},
+      "2026-06-15": {"count": 9}
+    }
+  }
+}
+```
+
+### User sees:
+```
+Participant counts:
+| Vesting Date | Participants |
+|--------------|-------------|
+| 2026-05-15   | 13          |
+| 2026-06-15   | 9           |
+| Total unique | 18          |
+```
+
+---
+
+## Q3 — "What is KYC and who has pending KYC?"
+
+### Step 1 — Planner classifies
+```python
+plan = planner.classify(
+    query="What is KYC and who has pending KYC?",
+    context_registry={...turn_0, turn_1...}
+)
+```
+
+Planner sees:
+```
+- "What is KYC" → concept explanation → RAG
+- "who has pending KYC" → data query → operational
+- Two distinct parts → combo
+- RAG part: generic concept → user_guide_agent
+- Operational part: KYC status → participant_agent
+```
+
+Planner returns:
+```json
+{
+  "split_type": "combo",
+  "route": "combo",
+  "intent": "explain_and_list_kyc",
+  "rag_agent": "user_guide_agent",
+  "rag_query": "What is KYC?",
+  "operational_query": "list participants with pending KYC"
+}
+```
+
+### Step 2 — route_query returns combo plan
+```json
+{
+  "status": "success",
+  "route": "combo",
+  "split_type": "combo",
+  "rag_agent": "user_guide_agent",
+  "rag_query": "What is KYC?",
+  "operational_query": "list participants with pending KYC"
+}
+```
+
+### Step 3 — Orchestrator handles both parts
+
+**Part A — RAG:**
+```
+orchestrator → user_guide_agent("What is KYC?")
+
+user_guide_agent:
+  → checks artifact "user_guide_index.pkl"
+  → artifact exists → loads from artifact (no disk)
+  → FAISS search: "What is KYC?"
+  → top 3 chunks from participant_grant_user_guide.pdf
+  → Gemini synthesizes answer
+
+Terminal prints:
+🔍 SEARCH_GUIDES source: artifact | query: What is KYC?
+
+Returns:
+  ANSWER: KYC (Know Your Customer) is a compliance process...
+  SOURCE: participant_grant_user_guide.pdf, Section 8
+  NEXT ACTION: Navigate to Compliance → Upload documents
+```
+
+**Part B — Operational:**
+```
+orchestrator → participant_agent(
+  "list participants with pending KYC"
+)
+
+participant_agent:
+  → get_all_participants()
+  → filters kyc_status = "Pending"
+  → returns matching participants
+```
+
+### Step 4 — Orchestrator merges and presents
+```
+## Application Guide
+KYC (Know Your Customer) is a compliance verification process...
+Source: Participant Guide, Section 8
+Next Action: Navigate to Compliance → Upload documents → Submit
+
+---
+
+## Data — Participants with Pending KYC
+| Employee      | KYC Status | Department |
+|---------------|-----------|------------|
+| Priya Sharma  | Pending   | Legal      |
+| Nina Johansson| Pending   | Legal      |
+```
+
+---
+
+## Q4 — "Who is the EPM lead for this client?"
+
+### Step 1 — Planner classifies
+```python
+plan = planner.classify(
+    query="Who is the EPM lead for this client?",
+    context_registry={...}
+)
+```
+
+Planner sees:
+```
+- "EPM lead" → matches client_ops_agent trigger
+- "for this client" → client-specific
+- → rag, client_ops_agent
+```
+
+Planner returns:
+```json
+{
+  "split_type": "rag",
+  "route": "client_ops_agent",
+  "intent": "client_epm_contact",
+  "rag_query": "Who is the EPM lead?",
+  "operational_query": null
+}
+```
+
+### Step 2 — Generic RAG handler
+```python
+if plan["split_type"] == "rag":
+    rag_agent_name = plan["route"]  # "client_ops_agent"
+    return {
+        "route": "client_ops_agent",
+        "split_type": "rag"
+    }
+```
+
+### Step 3 — Orchestrator delegates
+```
+orchestrator → client_ops_agent("Who is the EPM lead?")
+
+client_ops_agent:
+  → reads client_id from session state = "CLIENT-001"
+  → checks artifact "client_ops_index_CLIENT-001.pkl"
+  → artifact exists → loads from artifact
+  → FAISS search on CLIENT-001 docs
+  → finds EPM team section
+
+Terminal prints:
+🔍 SEARCH_CLIENT_DOCS client: CLIENT-001 source: artifact
+
+Returns:
+  ANSWER: The EPM Lead is Rahul Verma (rahul.verma@epmservices.com)
+  SOURCE: client_specific_guide_filled.pdf, Section 2
+  NEXT ACTION: Contact via email or reach support team at
+               epm-support@epmservices.com
+               Working hours: Mon-Fri, 9AM-6PM EST
+```
+
+### User sees:
+```
+The EPM Lead for your client is:
+  Rahul Verma — rahul.verma@epmservices.com
+  Support: epm-support@epmservices.com
+  Hours: Mon–Fri, 9AM–6PM EST
+
+Next Action: Contact Rahul directly or email the support team.
+```
+
+---
+
+## Q5 — "Show grants linked to those participants"
+
+### Step 1 — Planner classifies
+```python
+plan = planner.classify(
+    query="Show grants linked to those participants",
+    context_registry={
+      "turn_0": {vesting_dates},
+      "turn_1": {employee_ids: ["A","B","C"...]},
+      "turn_2": {kyc combo results}
+    }
+)
+```
+
+Planner sees:
+```
+- "those participants" → references turn_1 employee_ids
+- "grants linked to" → needs grant_agent
+- employee_ids already in context → use them
+- join_key: employee_id (participants → grants)
+```
+
+Planner returns:
+```json
+{
+  "split_type": "operational",
+  "route": "grant_agent",
+  "intent": "get_grants_for_participants",
+  "requires_context": true,
+  "cross_agent": false,
+  "context_key": "employee_ids"
+}
+```
+
+### Step 2 — route_query handles context reuse
+```python
+# Reads employee_ids from context_registry
+employee_ids = registry.get_latest_employee_ids(tool_context)
+# → ["A", "B", "C", "D", "E"...] from turn_1
+```
+
+### Step 3 — Orchestrator delegates to grant_agent
+```
+orchestrator → grant_agent(
+  "Show grants for these employees: ['A','B','C','D','E'...]"
+)
+```
+
+### Step 4 — grant_agent handles it
+```
+grant_agent:
+  → load_grants(): source = artifact (already built)
+  → query_grants(
+      "show grants for employee_ids ['A','B','C'...]"
+    )
+  → PandasAI filters grants DataFrame by employee_ids
+  → returns grant breakdown
+
+Terminal prints:
+📦 LOAD_GRANTS source: artifact
+🔍 QUERY_GRANTS source: artifact | query: show grants for...
+```
+
+### Step 5 — update_context
+```python
+update_context(
+    agent_name="grant_agent",
+    employee_ids=["A","B","C"...],
+    summary={"by_grant_type": {"RSU": 12, "PSU": 6, "Option": 3}}
+)
+```
+
+### User sees:
+```
+Grants for the 18 participants across both vesting dates:
+
+| Grant Type   | Count | Total Unvested Shares |
+|--------------|-------|-----------------------|
+| RSU          | 12    | 18,450                |
+| PSU          | 6     | 7,200                 |
+| Stock Option | 3     | 4,100                 |
+
+Total: 21 grants, 29,750 unvested shares
+```
+
+---
+
+## The Full Session State After All 5 Questions
+
+```json
+{
+  "context_registry": {
+    "turn_0": {
+      "agent": "vesting_agent",
+      "intent": "get_vesting_dates",
+      "employee_ids": [],
+      "vesting_date": "2026-05-15",
+      "summary": {"vesting_dates": ["2026-05-15","2026-06-15"]}
+    },
+    "turn_1": {
+      "agent": "vesting_agent",
+      "intent": "get_participant_count_for_dates",
+      "employee_ids": ["A","B","C","D","E"...],
+      "summary": {"2026-05-15": 13, "2026-06-15": 9}
+    },
+    "turn_2": {
+      "agent": "combo",
+      "intent": "explain_and_list_kyc",
+      "employee_ids": [...pending kyc ids...],
+      "summary": {"rag": "user_guide", "ops": "participant"}
+    },
+    "turn_3": {
+      "agent": "client_ops_agent",
+      "intent": "client_epm_contact",
+      "employee_ids": [],
+      "summary": {"epm_lead": "Rahul Verma"}
+    },
+    "turn_4": {
+      "agent": "grant_agent",
+      "intent": "get_grants_for_participants",
+      "employee_ids": ["A","B","C"...],
+      "summary": {"RSU": 12, "PSU": 6, "Option": 3}
+    }
+  }
+}
+```
+
+**Total agent calls: 7**
+**Total LLM calls: 7 (planner) + agent calls**
+**Context_only calls: 0 (could have been used in Q2 if dates were already in state)**
+
+---
+
+## Key Takeaways From This Walkthrough
+
+```
+1. Planner reads context_registry EVERY turn
+   → decides if it can reuse previous data
+   → saves agent calls when possible
+
+2. Agent boundaries are strict
+   → vesting_agent never knows about participant data
+   → grant_agent never calls vesting directly
+   → orchestrator is the only one who sees the full picture
+
+3. RAG registry makes Q4 routing automatic
+   → "EPM lead" matches client_ops_agent triggers
+   → no hardcoding needed
+   → adding policy_agent tomorrow = just registry entry
+
+4. Combo queries (Q3) always present RAG first, data second
+   → user gets concept explanation + real data in one response
+
+5. Context accumulates across turns
+   → Q5 reuses employee_ids from Q1/Q2 without asking again
+   → this is the conversational memory working
+```
