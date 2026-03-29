@@ -100,6 +100,12 @@ COMMUNICATION:
 - Present data in business-friendly tables or summaries
 - Focus on outcomes and next steps
 
+STRICT RULE:
+Never call transfer_to_agent under any circumstances.
+Complete your task fully and return your response.
+The orchestrator manages all agent transitions.
+You are a specialist — respond and stop.
+
     """,
     tools=[
         get_vesting_dates,
