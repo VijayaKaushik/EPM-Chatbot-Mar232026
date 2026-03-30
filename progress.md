@@ -685,3 +685,89 @@ The planner previously only caught explicit combos with clear "and" structure ("
 **Context for future contributors**
 The COMMUNICATION INTENT RULE sits above the generic combo definition in the prompt so Gemini sees it first. If a new communication type appears that doesn't fit client_ops_agent, add a separate rule with a different rag_agent. Trigger keywords are explicit in the prompt — extend that list if new phrasings are missed.
 ---
+---
+### [2026-03-29 12:00 EST] participant_agent: concern_registry pattern
+
+**What changed**
+- Created `app/agent/manager/sub_agent/participant_agent/concern_registry.py` — 4 rules: kyc_incomplete (high), terminated_employees (medium), ach_unverified (medium), insider_in_blackout (critical)
+- Modified `app/agent/manager/sub_agent/participant_agent/tool.py` — added `from .concern_registry import CONCERN_RULES` import; added `_detect_concerns(df)` function driven entirely by registry; no hardcoded field names or values in the function
+
+**Logic & data flow**
+`_detect_concerns(df)` iterates CONCERN_RULES. For each rule: checks if `filter_field` column exists in df, applies `isin` mask, optionally applies `also_filter` for compound conditions (e.g., insider AND in blackout), appends concern dict with count + employee_ids + enrich_agent/query metadata. The enrich_agent field points to which RAG agent should explain the concern (user_guide_agent for app procedures, client_ops_agent for client policies).
+
+**Assumptions**
+- `ach_unverified` rule targets `ach_status` column — this lives in participant_details.json (nested under account_info), not participants.json. Test loaded participants.json only, so ach_unverified did not fire. When called against the merged DataFrame (as in analyze_participant_data), ach_status will be present after flattening.
+- `insider_in_blackout` did not fire in test data — no insiders currently in blackout in generated dataset. Rule is correct; data just doesn't trigger it.
+- Test output: Rules=4, Concerns found=2 (kyc_incomplete count=7, terminated_employees count=2)
+
+**Context for future contributors**
+To add a new concern (e.g., w8_w9_expired): add one dict to CONCERN_RULES in concern_registry.py. Zero changes to tool.py. The enrich_agent and enrich_query fields are metadata for future orchestrator enrichment — the orchestrator can read these and automatically call the indicated RAG agent when surfacing concerns to the user. The `_detect_concerns` function is not yet called from any public tool — integration into a `get_participant_concerns` tool or a dashboard surface is the next step.
+---
+---
+### [2026-03-29 13:00 EST] Orchestrator: sub_agents → AgentTool
+
+**What changed**
+- Modified `app/agent/orchestrator/agent.py` — added `AgentTool` import; replaced `sub_agents=[...]` with 5 `AgentTool(agent=...)` entries in `tools=[...]`; instruction unchanged
+
+**Logic & data flow**
+`sub_agents` triggers ADK's transfer_to_agent mechanism — the orchestrator hands off control entirely and never gets the response back. `AgentTool` wraps each agent as a callable tool — the orchestrator calls it, receives the result, and continues its own reasoning loop. This means planner is called on every query, orchestrator sees every agent response, and update_context is reliably called after each data agent.
+
+**Assumptions**
+- `route_query` and `update_context` (plain Python functions) are in tools but ADK wraps them as FunctionTool — they don't surface `.name` the same way AgentTool does in the verification script; structurally correct
+- `sub_agents` returns `[]` rather than being absent — ADK always initialises the attribute; functionally equivalent to the expected "NONE — correct"
+
+**Context for future contributors**
+Never use `sub_agents` on the orchestrator. It causes uncontrolled agent handoffs that bypass the planner and break context tracking. Always use `AgentTool` so the orchestrator retains control after each delegation.
+---
+---
+### [2026-03-29 14:00 EST] Orchestrator: enrich_from_concerns tool + concern enrichment flow
+
+**What changed**
+- Modified `app/agent/orchestrator/agent.py` — added `enrich_from_concerns(concerns, tool_context)` function; added it to tools list; added POST-RESPONSE CONCERN CHECK block to orchestrator instruction after the participant_agent routing section
+
+**Logic & data flow**
+After participant_agent returns, the orchestrator checks if the response contains a `concerns` key. If non-empty, it calls `enrich_from_concerns` which logs each concern with severity and returns a structured list of enrichment instructions. Each enrichment carries `enrich_agent` (user_guide_agent or client_ops_agent) and `enrich_query` — the orchestrator then calls those RAG agents to retrieve guidance, and presents the final response with data results + severity-tagged concern sections. The concern metadata (which agent to call, what to ask) originates from `concern_registry.py` via `_detect_concerns()` in participant_agent/tool.py.
+
+**Assumptions**
+- `enrich_from_concerns` is a no-op if concerns is empty — safe to call always
+- ADK stores plain Python functions under a `function` type, not `BaseTool` — they don't expose `.name` via `hasattr` the same way AgentTool does; all 8 tools confirmed present (3 function + 5 AgentTool)
+- participant_agent must include `concerns` in its response dict for the flow to trigger — this is the next integration step
+
+**Context for future contributors**
+The concern enrichment flow is: concern_registry.py defines rules → _detect_concerns() in tool.py runs them → participant_agent includes concerns in response → orchestrator calls enrich_from_concerns → orchestrator calls RAG agents per concern → formatted output with severity icons. Adding a new concern type requires only a new entry in concern_registry.py.
+---
+---
+### [2026-03-29 15:00 EST] Concern enrichment: text-based extraction + participant_agent reporting rule
+
+**What changed**
+- Modified `app/agent/manager/sub_agent/participant_agent/agent.py` — added CONCERN REPORTING rule to instruction: agent must append `CONCERNS_JSON: [...]` verbatim at end of response when concerns exist
+- Modified `app/agent/orchestrator/agent.py` — added `import re`; added `_extract_concerns_from_response(response_text)` helper using regex to parse `CONCERNS_JSON:` line; updated `enrich_from_concerns` signature with `response_text: str = ""` fallback; updated POST-RESPONSE CONCERN CHECK instruction to use `response_text` approach instead of `concerns` JSON string param
+
+**Logic & data flow**
+participant_agent appends a `CONCERNS_JSON: [...]` line to its text response when concerns are detected. The orchestrator passes the full response text to `enrich_from_concerns(concerns="", response_text="...")`. The helper `_extract_concerns_from_response` runs a regex search for the `CONCERNS_JSON:` marker and parses the JSON array. This avoids the `INVALID_ARGUMENT` Gemini schema error that occurs with `list` type parameters, and avoids relying on the LLM to correctly serialize a list argument. The extraction is deterministic — regex on a fixed marker string.
+
+**Assumptions**
+- participant_agent must faithfully append the CONCERNS_JSON line — this depends on LLM instruction following; the format is explicit and verbatim in the instruction
+- `_extract_concerns_from_response` returns `[]` safely on any parse failure — no exception propagates
+- regex uses `re.DOTALL` to handle multi-line JSON arrays
+
+**Context for future contributors**
+The two-path design in `enrich_from_concerns`: (1) `concerns` param takes a pre-parsed JSON string if the orchestrator can provide it directly, (2) `response_text` fallback extracts from the agent's full text response. Path 2 is the active path. Path 1 is reserved for future direct tool-call integration. Tested: extraction correctly parses concern from sample response text; empty text returns `[]`.
+---
+---
+### [2026-03-29 16:00 EST] update_context: auto concern detection for participant_agent
+
+**What changed**
+- Modified `app/agent/orchestrator/agent.py` — replaced `update_context` with version that runs `_detect_concerns()` automatically whenever `agent_name == "participant_agent"`; return value now includes `concerns` list and `has_concerns` bool; updated POST-RESPONSE CONCERN CHECK instruction to use `result["has_concerns"]` from update_context return value instead of scanning response text
+
+**Logic & data flow**
+When the orchestrator calls `update_context(agent_name="participant_agent", ...)`, the function loads `participants.json`, builds a DataFrame, optionally filters to `resolved_ids` if a prior vesting query scoped the employee set, then runs `_detect_concerns(df)` from `concern_registry.py`. Concerns are printed to console and returned in the response dict. The orchestrator instruction checks `result["has_concerns"]` — if True, calls `enrich_from_concerns` with the concerns list, then calls the appropriate RAG agent per concern for guidance, then presents the formatted output. If False, presents data directly. This makes concern detection automatic and invisible to the LLM — it happens as a side effect of the mandatory `update_context` call.
+
+**Assumptions**
+- `participants.json` path is resolved relative to `agent.py` using `pathlib.Path(__file__).parent.parent / "manager/sub_agent/..."` — works when run from project root with PYTHONPATH=.
+- Concern detection failure is caught silently — concerns defaults to `[]` on any exception so the tool never errors
+- `resolved_ids` filter is applied when non-empty (cross-agent context) — allows concern scoping to a vesting cohort
+
+**Context for future contributors**
+The concern flow is now: update_context detects → returns concerns → orchestrator calls enrich_from_concerns → orchestrator calls RAG agents per concern → formatted output. The `_extract_concerns_from_response` / CONCERNS_JSON text approach (previous step) is now a backup; the primary path is through update_context return value. Test confirmed: kyc_incomplete (high, count=7) and terminated_employees (medium, count=2) detected against full participant dataset.
+---

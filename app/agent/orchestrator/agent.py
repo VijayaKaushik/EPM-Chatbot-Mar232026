@@ -1,8 +1,10 @@
 import json
+import re
 from typing import List, Optional
 
 from google.adk.agents import LlmAgent
 from google.adk.agents.callback_context import CallbackContext
+from google.adk.tools import AgentTool
 from google.adk.tools.base_tool import BaseTool
 from google.adk.tools.tool_context import ToolContext
 
@@ -189,15 +191,47 @@ def update_context(
     """
     Called after an agent completes its response.
     Records lightweight turn summary — keys and scalars only.
-    Never stores full records.
+    For participant_agent: automatically detects and returns concerns.
 
     LLM Prompt Examples:
       - Called automatically after vesting_agent completes
       - Called automatically after participant_agent completes
     """
-    turn_index = registry.get_turn_index(tool_context)
+    import pathlib
+    import pandas as pd
+    from app.agent.manager.sub_agent.participant_agent.tool import _detect_concerns
 
-    resolved_ids = employee_ids or tool_context.state.get("last_vesting_employee_ids", [])
+    turn_index = registry.get_turn_index(tool_context)
+    resolved_ids = employee_ids or tool_context.state.get(
+        "last_vesting_employee_ids", []
+    )
+
+    # AUTO CONCERN DETECTION — runs whenever participant_agent completes
+    concerns = []
+    if agent_name == "participant_agent":
+        try:
+            participant_data = json.loads(
+                (pathlib.Path(__file__).parent.parent /
+                 "manager/sub_agent/participant_agent/participant_data/participants.json")
+                .read_text()
+            )
+            df = pd.DataFrame(participant_data)
+
+            # If we have specific employee_ids, filter to those
+            if resolved_ids:
+                df = df[df["employee_id"].isin(resolved_ids)]
+
+            concerns = _detect_concerns(df)
+
+            if concerns:
+                print(f"\n🔔 CONCERNS DETECTED: {len(concerns)}")
+                for c in concerns:
+                    print(f"  ⚠️  {c['type']} | {c['severity']} | count={c['count']}")
+            else:
+                print(f"\n✅ NO CONCERNS — participant data is clean")
+
+        except Exception as e:
+            print(f"\n⚠️ Concern detection failed: {e}")
 
     registry.write_turn(
         tool_context=tool_context,
@@ -209,7 +243,77 @@ def update_context(
         batch_id=batch_id,
         summary=_parse_summary(summary),
     )
-    return {"status": "success", "turn_recorded": turn_index}
+
+    return {
+        "status":        "success",
+        "turn_recorded": turn_index,
+        "concerns":      concerns,
+        "has_concerns":  len(concerns) > 0,
+    }
+
+
+def _extract_concerns_from_response(response_text: str) -> list:
+    """Extract concerns JSON from participant_agent text response."""
+    match = re.search(r'CONCERNS_JSON:\s*(\[.*?\])', response_text, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group(1))
+        except Exception:
+            return []
+    return []
+
+
+def enrich_from_concerns(
+    concerns: str,
+    tool_context: ToolContext,
+    response_text: str = "",
+) -> dict:
+    """
+    Called after participant_agent completes.
+    Reads concerns from agent result (pass as JSON string).
+    Falls back to extracting CONCERNS_JSON line from response_text.
+    Returns enrichment instructions per concern.
+
+    LLM Prompt Examples:
+      - Called automatically after participant_agent returns concerns
+    """
+    parsed: list = []
+    if concerns:
+        try:
+            parsed = json.loads(concerns) if isinstance(concerns, str) else concerns
+        except (json.JSONDecodeError, ValueError):
+            parsed = []
+
+    if not parsed and response_text:
+        parsed = _extract_concerns_from_response(response_text)
+
+    if not parsed:
+        return {
+            "status":      "success",
+            "enrichments": [],
+            "message":     "No concerns — data is clean",
+        }
+
+    print(f"\n🔔 ENRICHMENT TRIGGERED: {len(parsed)} concerns\n")
+    for c in parsed:
+        print(f"  ⚠️  {c['type']} | {c['severity']} | count: {c['count']}")
+
+    return {
+        "status":      "success",
+        "enrichments": [
+            {
+                "type":         c["type"],
+                "description":  c.get("description", c["type"]),
+                "severity":     c["severity"],
+                "count":        c["count"],
+                "employees":    c.get("employees", []),
+                "enrich_agent": c["enrich_agent"],
+                "enrich_query": c["enrich_query"],
+            }
+            for c in parsed
+        ],
+        "message": f"{len(parsed)} concerns need enrichment",
+    }
 
 
 orchestrator = LlmAgent(
@@ -289,6 +393,32 @@ orchestrator = LlmAgent(
       -> When participant_agent completes, call update_context
          with the employee_ids from its response
 
+      POST-RESPONSE CONCERN CHECK:
+      update_context automatically detects concerns when
+      participant_agent completes. Always check its return value:
+
+      result = update_context(agent_name="participant_agent", ...)
+
+      IF result["has_concerns"] is True:
+        → call enrich_from_concerns(concerns=result["concerns"])
+        → for each enrichment returned:
+            → call enrich_agent with enrich_query
+        → present:
+
+          ## Participant Data
+          [data table]
+
+          ---
+
+          ## ⚠️ [description] ([count] participants)
+          [RAG guidance]
+          Next Action: [step]
+
+      IF result["has_concerns"] is False:
+        → present data directly, no enrichment
+
+      SEVERITY ICONS: critical=🚨 high=⚠️ medium=📋 info=ℹ️
+
       route = "grant_agent"
       -> Delegate to grant_agent with the user's query
       -> grant_agent loads data into artifact automatically
@@ -367,9 +497,16 @@ orchestrator = LlmAgent(
       pass: 'show [requested data] for these grant_ids: [ids]'
     - The receiving agent decides how to answer internally
     """,
-    tools=[route_query, update_context],
-    sub_agents=[vesting_agent, participant_agent, grant_agent,
-                user_guide_agent, client_ops_agent],
+    tools=[
+        route_query,
+        update_context,
+        enrich_from_concerns,
+        AgentTool(agent=vesting_agent),
+        AgentTool(agent=participant_agent),
+        AgentTool(agent=grant_agent),
+        AgentTool(agent=user_guide_agent),
+        AgentTool(agent=client_ops_agent),
+    ],
     before_tool_callback=_log_tool_call,
     before_agent_callback=_log_agent_start,
 )

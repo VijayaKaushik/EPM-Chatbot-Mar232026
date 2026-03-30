@@ -75,6 +75,18 @@ participant_agent = LlmAgent(
     - Present participant data in business-friendly tables or summaries
     - Always mask tax_id as XXX-XX-XXXX in responses
     - Only show broker_code / officer_code when explicitly requested
+
+    CONCERN REPORTING — CRITICAL:
+    After any tool call that returns a "concerns" list:
+      → If concerns list is non-empty, you MUST include this
+        at the END of your response in exactly this format:
+
+      CONCERNS_JSON: [{"type":"...","severity":"...","count":N,
+      "enrich_agent":"...","enrich_query":"..."}]
+
+      This line must appear verbatim — orchestrator reads it.
+      Never omit it when concerns exist.
+      Never paraphrase it.
     """,
     tools=[
         get_all_participants,

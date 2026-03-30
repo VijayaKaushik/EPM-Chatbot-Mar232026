@@ -7,6 +7,8 @@ import pandas as pd
 from dotenv import load_dotenv
 from pandasai.llm.base import LLM as _PaiLLM
 
+from .concern_registry import CONCERN_RULES
+
 load_dotenv()
 
 PARTICIPANT_DATA_DIR = pathlib.Path(__file__).parent / "participant_data"
@@ -132,6 +134,39 @@ class GeminiLLM(_PaiLLM):
             contents=prompt,
         )
         return response.text
+
+
+def _detect_concerns(df: pd.DataFrame) -> list[dict]:
+    """
+    Detects concerns using rules defined in concern_registry.py.
+    No hardcoded field names or values here.
+    To add/change a concern → edit concern_registry.py only.
+    To switch to LLM-based detection in future →
+      replace this function only, registry stays.
+    """
+    concerns = []
+    for rule in CONCERN_RULES:
+        field = rule["filter_field"]
+        if field not in df.columns:
+            continue
+        mask = df[field].isin(rule["filter_values"])
+        if "also_filter" in rule:
+            also = rule["also_filter"]
+            if also["field"] in df.columns:
+                mask = mask & df[also["field"]].isin(also["values"])
+        matched = df[mask]
+        if len(matched) == 0:
+            continue
+        concerns.append({
+            "type":         rule["type"],
+            "description":  rule["description"],
+            "count":        len(matched),
+            "severity":     rule["severity"],
+            "employees":    matched[rule["id_field"]].tolist(),
+            "enrich_agent": rule["enrich_agent"],
+            "enrich_query": rule["enrich_query"],
+        })
+    return concerns
 
 
 def analyze_participant_data(query: str) -> Dict:
